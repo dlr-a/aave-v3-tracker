@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS reserve_state;
+DROP TABLE IF EXISTS reserves;
