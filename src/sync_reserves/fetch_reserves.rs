@@ -6,25 +6,7 @@ use alloy::{
     providers::{ProviderBuilder, WsConnect},
     sol,
 };
-use eyre::Result;
-use thiserror::Error;
-use tracing::error;
-use tracing::info;
-
-#[derive(Debug, Error)]
-pub enum FetchError {
-    #[error("Failed to connect via WS")]
-    WSConnectionFailed,
-
-    #[error("Failed to fetch tokens")]
-    FetchingTokensFailed,
-
-    #[error("Failed to fetch token address")]
-    FetchingTokenAddressFailed,
-
-    #[error("Failed to fetch reserve configuration data")]
-    FetchingReserveConfigurationDataFailed,
-}
+use eyre::{Context, Result};
 
 sol! {
     #[sol(rpc)]
@@ -43,58 +25,42 @@ sol! {
 
 pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
     let ws = WsConnect::new(rpc_url);
-    let provider = match ProviderBuilder::new().connect_ws(ws).await {
-        Ok(p) => p,
-        Err(_) => return Err(FetchError::WSConnectionFailed.into()),
-    };
+    let provider = ProviderBuilder::new()
+        .connect_ws(ws)
+        .await
+        .wrap_err("Couldn't connect to the WS")?;
 
     let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
     let protocol_data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
 
-    let tokens = match protocol_data_provider.getAllReservesTokens().call().await {
-        Ok(result) => result,
-        Err(e) => {
-            tracing::error!(
-                "Failed to fetch all reserve tokens from ProtocolDataProvider. Address: {:?}, Error: {:?}",
-                data_provider_addr,
-                e
-            );
-            return Err(FetchError::FetchingTokensFailed.into());
-        }
-    };
+    let tokens = protocol_data_provider
+        .getAllReservesTokens()
+        .call()
+        .await
+        .wrap_err("Failed to fetch all reserve tokens from ProtocolDataProvider")?;
 
     for token in tokens {
-        let token_addresses = match protocol_data_provider
+        let token_addresses = protocol_data_provider
             .getReserveTokensAddresses(token.tokenAddress)
             .call()
             .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::error!(
-                    "RPC Error: Failed to fetch token addresses for assset: {:?}, {:?}",
-                    token.tokenAddress,
-                    e
-                );
-                return Err(FetchError::FetchingTokenAddressFailed.into());
-            }
-        };
+            .wrap_err_with(|| {
+                format!(
+                    "RPC Error: Failed to fetch token addresses for assset: {:?}",
+                    token.tokenAddress
+                )
+            })?;
 
-        let reserve = match protocol_data_provider
+        let reserve = protocol_data_provider
             .getReserveConfigurationData(token.tokenAddress)
             .call()
             .await
-        {
-            Ok(result) => result,
-            Err(e) => {
-                tracing::error!(
-                    "RPC Error: Failed to fetch reserve configuration data. Reserve: {:?}, Error: {:?}",
-                    token.tokenAddress,
-                    e
-                );
-                return Err(FetchError::FetchingReserveConfigurationDataFailed.into());
-            }
-        };
+            .wrap_err_with(|| {
+                format!(
+                    "RPC Error: Failed to fetch reserve configuration data. Reserve: {:?}",
+                    token.tokenAddress
+                )
+            })?;
 
         let contract = IERC20::new(token.tokenAddress, &provider);
         let symbol = match contract.symbol().call().await {
@@ -120,10 +86,9 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
             s_debt_token_address: token_addresses.stableDebtTokenAddress.to_string(),
         };
 
-        match reserves_repository::sync_reserve(pool, reserve_data).await {
-            Ok(_) => info!("Synced: {}", symbol),
-            Err(e) => error!("Error {}: {}", symbol, e),
-        }
+        reserves_repository::sync_reserve(pool, reserve_data)
+            .await
+            .wrap_err_with(|| format!("Failed to sync reserve. Asset: {}", symbol))?;
     }
     Ok(())
 }
