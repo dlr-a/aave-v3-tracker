@@ -6,8 +6,15 @@ diesel::table! {
         asset_address -> Bpchar,
         liquidity_index -> Numeric,
         variable_borrow_index -> Numeric,
-        current_liquidity_rate -> Nullable<Numeric>,
-        current_variable_borrow_rate -> Nullable<Numeric>,
+        current_liquidity_rate -> Numeric,
+        current_variable_borrow_rate -> Numeric,
+        current_stable_borrow_rate -> Numeric,
+        total_liquidity -> Numeric,
+        total_variable_debt -> Numeric,
+        total_stable_debt -> Numeric,
+        accrued_to_treasury -> Numeric,
+        unbacked -> Numeric,
+        isolation_mode_total_debt -> Numeric,
     }
 }
 
@@ -18,17 +25,23 @@ diesel::table! {
         #[max_length = 255]
         symbol -> Varchar,
         decimals -> Int8,
+        reserve_id -> Nullable<Int4>,
         liquidation_threshold -> Int8,
         liquidation_bonus -> Int8,
         ltv -> Int8,
         is_active -> Bool,
         is_frozen -> Bool,
+        is_paused -> Bool,
+        is_borrowing_enabled -> Bool,
+        is_dropped -> Bool,
         #[max_length = 42]
         atoken_address -> Bpchar,
         #[max_length = 42]
         v_debt_token_address -> Bpchar,
         #[max_length = 42]
         s_debt_token_address -> Bpchar,
+        #[max_length = 42]
+        interest_rate_strategy_address -> Nullable<Bpchar>,
     }
 }
 
