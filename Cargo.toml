@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-alloy = { version = "1.0.41", features = ["provider-ws", "contract", "rpc"] }
+alloy = { version = "1.0.41", features = ["provider-ws", "contract", "rpc", "sol-types"] }
 diesel = { version = "2.1", features = ["postgres", "numeric", "bigdecimal"] }
 diesel-async = { version = "0.4", features = ["postgres", "bb8", "deadpool"] }
 tokio = { version = "1", features = ["full"] }
@@ -15,3 +15,7 @@ futures-util = "0.3.31"
 thiserror = "2.0.17"
 tracing = "0.1.43"
 tracing-subscriber = "0.3.22"
+backoff = { version = "0.4.0", features = ["tokio"] }
+alloy-sol-types = "1.4.1"
+alloy-primitives = "1.4.1"
+alloy-provider = "1.1.3"

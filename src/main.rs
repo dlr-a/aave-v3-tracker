@@ -1,6 +1,8 @@
-pub mod db;
-pub mod sync_reserves;
+mod db;
+mod errors;
+mod sync_reserves;
 use crate::sync_reserves::fetch_reserves::fetch_reserves;
+use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
 use dotenvy::dotenv;
 use std::env;
 use tracing::info;
@@ -19,6 +21,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Starting reserves synchronization...");
     fetch_reserves(&pool, rpc_url.clone()).await?;
     info!("Reserves synced!");
+
+    reserve_event_handler(&pool, rpc_url.clone()).await?;
 
     Ok(())
 }

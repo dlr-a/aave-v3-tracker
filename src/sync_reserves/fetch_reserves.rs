@@ -120,7 +120,7 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
     Ok(())
 }
 
-async fn process_reserve<P>(
+pub async fn process_reserve<P>(
     pool: &DbPool,
     provider: &P,
     asset_address: Address,
@@ -132,6 +132,11 @@ where
 {
     let data_provider = IProtocolDataProvider::new(dp_addr, provider.clone());
     let pool_contract = IPool::new(pool_addr, provider.clone());
+
+    let current_block = provider
+        .get_block_number()
+        .await
+        .wrap_err("Failed to fetch current block number")?;
 
     let token_addresses = data_provider
         .getReserveTokensAddresses(asset_address)
@@ -152,7 +157,7 @@ where
         .unwrap_or("UNKNOWN".to_string());
 
     let config_data: U256 = pool_data.configuration.data;
-    let is_paused = (config_data >> 60usize).bitand(U256::from(1)).is_zero();
+    let is_paused = !((config_data >> 60usize).bitand(U256::from(1)).is_zero());
     let reserve_id = pool_data.id as i32;
 
     let ltv = reserve_config.ltv.to::<u64>() as i64;
@@ -189,6 +194,7 @@ where
         v_debt_token_address: token_addresses.variableDebtTokenAddress.to_string(),
         s_debt_token_address: token_addresses.stableDebtTokenAddress.to_string(),
         interest_rate_strategy_address: pool_data.interestRateStrategyAddress.to_string(),
+        last_updated_block: current_block as i64,
     };
 
     let reserve_state = NewReserveState {
@@ -208,6 +214,7 @@ where
         accrued_to_treasury: to_bigdecimal(U256::from(pool_data.accruedToTreasury))?,
         unbacked: to_bigdecimal(U256::from(pool_data.unbacked))?,
         isolation_mode_total_debt: to_bigdecimal(U256::from(pool_data.isolationModeTotalDebt))?,
+        last_updated_block: current_block as i64,
     };
 
     reserves_repository::sync_reserve(pool, reserve_data).await?;

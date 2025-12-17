@@ -24,6 +24,7 @@ pub struct Reserve {
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
     pub interest_rate_strategy_address: String,
+    pub last_updated_block: i64,
 }
 
 #[derive(Insertable, Debug)]
@@ -48,6 +49,7 @@ pub struct NewReserve {
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
     pub interest_rate_strategy_address: String,
+    pub last_updated_block: i64,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
@@ -70,6 +72,7 @@ pub struct ReserveState {
     pub accrued_to_treasury: BigDecimal,
     pub unbacked: BigDecimal,
     pub isolation_mode_total_debt: BigDecimal,
+    pub last_updated_block: i64,
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]
@@ -90,4 +93,5 @@ pub struct NewReserveState {
     pub accrued_to_treasury: BigDecimal,
     pub unbacked: BigDecimal,
     pub isolation_mode_total_debt: BigDecimal,
+    pub last_updated_block: i64,
 }

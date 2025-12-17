@@ -15,6 +15,7 @@ diesel::table! {
         accrued_to_treasury -> Numeric,
         unbacked -> Numeric,
         isolation_mode_total_debt -> Numeric,
+        last_updated_block -> Int8,
     }
 }
 
@@ -42,6 +43,7 @@ diesel::table! {
         s_debt_token_address -> Bpchar,
         #[max_length = 42]
         interest_rate_strategy_address -> Nullable<Bpchar>,
+        last_updated_block -> Int8,
     }
 }
 

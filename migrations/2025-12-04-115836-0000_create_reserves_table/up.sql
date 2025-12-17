@@ -17,7 +17,8 @@ CREATE TABLE reserves (
     atoken_address CHAR(42) NOT NULL,
     v_debt_token_address CHAR(42) NOT NULL,
     s_debt_token_address CHAR(42) NOT NULL,
-    interest_rate_strategy_address CHAR(42)
+    interest_rate_strategy_address CHAR(42),
+    last_updated_block BIGINT NOT NULL DEFAULT 0
 );
 
 
@@ -33,5 +34,6 @@ CREATE TABLE reserve_state (
     total_stable_debt NUMERIC(78, 0) NOT NULL DEFAULT 0,
     accrued_to_treasury NUMERIC(78, 0) NOT NULL DEFAULT 0,
     unbacked NUMERIC(78,0) NOT NULL DEFAULT 0,
-    isolation_mode_total_debt NUMERIC(78,0) NOT NULL DEFAULT 0
+    isolation_mode_total_debt NUMERIC(78,0) NOT NULL DEFAULT 0,
+    last_updated_block BIGINT NOT NULL DEFAULT 0
 );
