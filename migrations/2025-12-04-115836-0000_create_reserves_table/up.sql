@@ -15,6 +15,7 @@ CREATE TABLE reserves (
     is_dropped BOOLEAN NOT NULL DEFAULT FALSE,
     supply_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
     borrow_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    reserve_factor BIGINT NOT NULL DEFAULT 0,
     
     atoken_address CHAR(42) NOT NULL,
     v_debt_token_address CHAR(42) NOT NULL,

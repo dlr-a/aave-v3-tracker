@@ -38,6 +38,7 @@ diesel::table! {
         is_dropped -> Bool,
         supply_cap -> Numeric,
         borrow_cap -> Numeric,
+        reserve_factor -> Int8,
         #[max_length = 42]
         atoken_address -> Bpchar,
         #[max_length = 42]

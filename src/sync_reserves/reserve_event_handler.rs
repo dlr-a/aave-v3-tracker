@@ -31,6 +31,7 @@ pub enum ProcessedLog {
     ReserveStableRateBorrowing(ReserveStableRateBorrowing),
     SupplyCapChanged(SupplyCapChanged),
     BorrowCapChanged(BorrowCapChanged),
+    ReserveFactorChanged(ReserveFactorChanged),
 }
 
 pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
@@ -101,6 +102,11 @@ pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
             .log_decode::<BorrowCapChanged>()
             .ok()
             .map(|e| ProcessedLog::BorrowCapChanged(e.data().clone())),
+
+        ReserveFactorChanged::SIGNATURE_HASH => log
+            .log_decode::<ReserveFactorChanged>()
+            .ok()
+            .map(|e| ProcessedLog::ReserveFactorChanged(e.data().clone())),
 
         _ => None,
     }
@@ -482,6 +488,22 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                 .await;
                 if let Err(err) = res {
                     error!("DB Error (Borrow Cap): {}", err);
+                }
+            }
+
+            ProcessedLog::ReserveFactorChanged(e) => {
+                let asset = e.asset;
+
+                let res = reserves_repository::update_reserve_factor(
+                    pool,
+                    asset.to_string().clone(),
+                    e.newReserveFactor.to::<u64>() as i64,
+                    block_number,
+                    log_index,
+                )
+                .await;
+                if let Err(err) = res {
+                    error!("DB Error (Reserve Factor): {}", err);
                 }
             }
         }

@@ -161,6 +161,7 @@ where
         .unwrap_or("UNKNOWN".to_string());
 
     let config_data: U256 = pool_data.configuration.data;
+    let reserve_factor = reserve_config.reserveFactor.to::<u64>() as i64;
     let is_paused = !((config_data >> 60usize).bitand(U256::from(1)).is_zero());
     let reserve_id = pool_data.id as i32;
 
@@ -194,6 +195,7 @@ where
         is_paused,
         supply_cap: to_bigdecimal(caps.supplyCap)?,
         borrow_cap: to_bigdecimal(caps.borrowCap)?,
+        reserve_factor,
         is_borrowing_enabled: reserve_config.borrowingEnabled,
         is_dropped: false,
         atoken_address: token_addresses.aTokenAddress.to_string(),

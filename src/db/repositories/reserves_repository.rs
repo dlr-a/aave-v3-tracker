@@ -29,6 +29,7 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
             is_dropped.eq(excluded(is_dropped)),
             supply_cap.eq(excluded(supply_cap)),
             borrow_cap.eq(excluded(borrow_cap)),
+            reserve_factor.eq(excluded(reserve_factor)),
             atoken_address.eq(excluded(atoken_address)),
             v_debt_token_address.eq(excluded(v_debt_token_address)),
             s_debt_token_address.eq(excluded(s_debt_token_address)),
@@ -36,6 +37,32 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
         ))
         .execute(&mut conn)
         .await?;
+
+    Ok(result)
+}
+
+pub async fn update_reserve_factor(
+    pool: &DbPool,
+    asset: String,
+    rsrv_factor: i64,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = pool.get().await?;
+
+    let result = diesel::update(
+        reserves
+            .filter(asset_address.eq(asset))
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
+    )
+    .set((
+        reserve_factor.eq(rsrv_factor),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(&mut conn)
+    .await?;
 
     Ok(result)
 }
