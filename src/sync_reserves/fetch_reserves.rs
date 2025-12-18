@@ -29,6 +29,9 @@ sol! {
         function getAllReservesTokens() external view returns (TokenData[] memory);
         function getReserveTokensAddresses(address asset) external view override returns (address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress);
         function getReserveConfigurationData(address asset) external view override returns (uint256 decimals, uint256 ltv, uint256 liquidationThreshold, uint256 liquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool stableBorrowRateEnabled, bool isActive, bool isFrozen);
+
+        function getReserveCaps(address asset) external view override returns (uint256 borrowCap, uint256 supplyCap);
+
     }
     #[sol(rpc)]
     interface IERC20 {
@@ -147,6 +150,7 @@ where
         .call()
         .await?;
     let pool_data = pool_contract.getReserveData(asset_address).call().await?;
+    let caps = data_provider.getReserveCaps(asset_address).call().await?;
 
     let erc20 = IERC20::new(asset_address, provider.clone());
     let symbol = erc20
@@ -188,6 +192,8 @@ where
         is_active: reserve_config.isActive,
         is_frozen: reserve_config.isFrozen,
         is_paused,
+        supply_cap: to_bigdecimal(caps.supplyCap)?,
+        borrow_cap: to_bigdecimal(caps.borrowCap)?,
         is_borrowing_enabled: reserve_config.borrowingEnabled,
         is_dropped: false,
         atoken_address: token_addresses.aTokenAddress.to_string(),

@@ -19,6 +19,8 @@ pub struct Reserve {
     pub is_paused: bool,
     pub is_borrowing_enabled: bool,
     pub is_dropped: bool,
+    pub supply_cap: BigDecimal,
+    pub borrow_cap: BigDecimal,
 
     pub atoken_address: String,
     pub v_debt_token_address: String,
@@ -45,6 +47,8 @@ pub struct NewReserve {
     pub is_paused: bool,
     pub is_borrowing_enabled: bool,
     pub is_dropped: bool,
+    pub supply_cap: BigDecimal,
+    pub borrow_cap: BigDecimal,
 
     pub atoken_address: String,
     pub v_debt_token_address: String,

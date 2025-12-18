@@ -36,6 +36,8 @@ diesel::table! {
         is_paused -> Bool,
         is_borrowing_enabled -> Bool,
         is_dropped -> Bool,
+        supply_cap -> Numeric,
+        borrow_cap -> Numeric,
         #[max_length = 42]
         atoken_address -> Bpchar,
         #[max_length = 42]

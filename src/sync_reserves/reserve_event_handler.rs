@@ -29,6 +29,8 @@ pub enum ProcessedLog {
     ReserveDropped(ReserveDropped),
     InterestRateStrategy(ReserveInterestRateStrategyChanged),
     ReserveStableRateBorrowing(ReserveStableRateBorrowing),
+    SupplyCapChanged(SupplyCapChanged),
+    BorrowCapChanged(BorrowCapChanged),
 }
 
 pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
@@ -89,6 +91,16 @@ pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
             .log_decode::<ReserveStableRateBorrowing>()
             .ok()
             .map(|e| ProcessedLog::ReserveStableRateBorrowing(e.data().clone())),
+
+        SupplyCapChanged::SIGNATURE_HASH => log
+            .log_decode::<SupplyCapChanged>()
+            .ok()
+            .map(|e| ProcessedLog::SupplyCapChanged(e.data().clone())),
+
+        BorrowCapChanged::SIGNATURE_HASH => log
+            .log_decode::<BorrowCapChanged>()
+            .ok()
+            .map(|e| ProcessedLog::BorrowCapChanged(e.data().clone())),
 
         _ => None,
     }
@@ -233,6 +245,8 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
             ReservePaused::SIGNATURE_HASH,
             ReserveBorrowing::SIGNATURE_HASH,
             ReserveActive::SIGNATURE_HASH,
+            BorrowCapChanged::SIGNATURE_HASH,
+            SupplyCapChanged::SIGNATURE_HASH,
         ]);
 
     let sub_events = provider.subscribe_logs(&filter).await?;
@@ -436,6 +450,38 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                 .await;
                 if let Err(err) = res {
                     error!("DB Error (Stable Borrowing): {}", err);
+                }
+            }
+
+            ProcessedLog::SupplyCapChanged(e) => {
+                let asset = e.asset;
+
+                let res = reserves_repository::update_supply_cap(
+                    pool,
+                    asset.to_string().clone(),
+                    to_bigdecimal(e.newSupplyCap)?,
+                    block_number,
+                    log_index,
+                )
+                .await;
+                if let Err(err) = res {
+                    error!("DB Error (Supply Cap): {}", err);
+                }
+            }
+
+            ProcessedLog::BorrowCapChanged(e) => {
+                let asset = e.asset;
+
+                let res = reserves_repository::update_borrow_cap(
+                    pool,
+                    asset.to_string().clone(),
+                    to_bigdecimal(e.newBorrowCap)?,
+                    block_number,
+                    log_index,
+                )
+                .await;
+                if let Err(err) = res {
+                    error!("DB Error (Borrow Cap): {}", err);
                 }
             }
         }

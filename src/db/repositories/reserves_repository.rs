@@ -2,6 +2,7 @@ use crate::db::connection::DbPool;
 use crate::db::models::NewReserve;
 use crate::db::schema::reserves::dsl::*;
 use crate::errors::TrackerError;
+use bigdecimal::BigDecimal;
 use diesel::pg::upsert::excluded;
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
@@ -26,6 +27,8 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
             is_paused.eq(excluded(is_paused)),
             is_borrowing_enabled.eq(excluded(is_borrowing_enabled)),
             is_dropped.eq(excluded(is_dropped)),
+            supply_cap.eq(excluded(supply_cap)),
+            borrow_cap.eq(excluded(borrow_cap)),
             atoken_address.eq(excluded(atoken_address)),
             v_debt_token_address.eq(excluded(v_debt_token_address)),
             s_debt_token_address.eq(excluded(s_debt_token_address)),
@@ -33,6 +36,58 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
         ))
         .execute(&mut conn)
         .await?;
+
+    Ok(result)
+}
+
+pub async fn update_supply_cap(
+    pool: &DbPool,
+    asset: String,
+    sply_cap: BigDecimal,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = pool.get().await?;
+
+    let result = diesel::update(
+        reserves
+            .filter(asset_address.eq(asset))
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
+    )
+    .set((
+        supply_cap.eq(sply_cap),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(&mut conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn update_borrow_cap(
+    pool: &DbPool,
+    asset: String,
+    brw_cap: BigDecimal,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = pool.get().await?;
+
+    let result = diesel::update(
+        reserves
+            .filter(asset_address.eq(asset))
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
+    )
+    .set((
+        borrow_cap.eq(brw_cap),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(&mut conn)
+    .await?;
 
     Ok(result)
 }

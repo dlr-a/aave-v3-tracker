@@ -13,6 +13,8 @@ CREATE TABLE reserves (
     is_paused BOOLEAN NOT NULL DEFAULT FALSE,
     is_borrowing_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     is_dropped BOOLEAN NOT NULL DEFAULT FALSE,
+    supply_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    borrow_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
     
     atoken_address CHAR(42) NOT NULL,
     v_debt_token_address CHAR(42) NOT NULL,
