@@ -25,6 +25,7 @@ pub struct Reserve {
     pub s_debt_token_address: String,
     pub interest_rate_strategy_address: String,
     pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
 }
 
 #[derive(Insertable, Debug)]
@@ -73,6 +74,7 @@ pub struct ReserveState {
     pub unbacked: BigDecimal,
     pub isolation_mode_total_debt: BigDecimal,
     pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
 }
 
 #[derive(Insertable, AsChangeset, Debug, Clone)]

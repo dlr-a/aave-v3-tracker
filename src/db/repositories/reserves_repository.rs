@@ -42,17 +42,20 @@ pub async fn update_stable_borrow_address(
     asset: String,
     stable_borrow_address: String,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         s_debt_token_address.eq(stable_borrow_address),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;
@@ -67,19 +70,22 @@ pub async fn update_risk_config(
     threshold_val: i64,
     bonus_val: i64,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         ltv.eq(ltv_val),
         liquidation_threshold.eq(threshold_val),
         liquidation_bonus.eq(bonus_val),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;
@@ -92,15 +98,21 @@ pub async fn set_frozen_status(
     asset: String,
     status: bool,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
-    .set((is_frozen.eq(status), last_updated_block.eq(block_number)))
+    .set((
+        is_frozen.eq(status),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
     .execute(&mut conn)
     .await?;
 
@@ -112,15 +124,21 @@ pub async fn set_paused_status(
     asset: String,
     status: bool,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
-    .set((is_paused.eq(status), last_updated_block.eq(block_number)))
+    .set((
+        is_paused.eq(status),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
     .execute(&mut conn)
     .await?;
 
@@ -132,17 +150,20 @@ pub async fn set_borrowing_status(
     asset: String,
     status: bool,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         is_borrowing_enabled.eq(status),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;
@@ -155,15 +176,21 @@ pub async fn set_active_status(
     asset: String,
     status: bool,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
-    .set((is_active.eq(status), last_updated_block.eq(block_number)))
+    .set((
+        is_active.eq(status),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
     .execute(&mut conn)
     .await?;
 
@@ -174,18 +201,21 @@ pub async fn set_dropped_status(
     pool: &DbPool,
     asset: String,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         is_dropped.eq(true),
         is_active.eq(false),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;
@@ -198,17 +228,20 @@ pub async fn update_strategy_address(
     asset: String,
     new_strategy: String,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserves
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         interest_rate_strategy_address.eq(new_strategy),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;

@@ -16,6 +16,7 @@ diesel::table! {
         unbacked -> Numeric,
         isolation_mode_total_debt -> Numeric,
         last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
     }
 }
 
@@ -44,6 +45,7 @@ diesel::table! {
         #[max_length = 42]
         interest_rate_strategy_address -> Nullable<Bpchar>,
         last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
     }
 }
 

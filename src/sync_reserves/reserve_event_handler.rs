@@ -242,6 +242,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 
     while let Some(log) = stream.next().await {
         let block_number = log.block_number.unwrap_or(0) as i64;
+        let log_index = log.log_index.unwrap_or(0) as i64;
 
         let log_data = match decode_log_type(&log) {
             Some(data) => data,
@@ -265,6 +266,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     to_bigdecimal(e.variableBorrowRate)?,
                     to_bigdecimal(e.stableBorrowRate)?,
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = result {
@@ -294,6 +296,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     e.liquidationThreshold.to::<u64>() as i64,
                     e.liquidationBonus.to::<u64>() as i64,
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = result {
@@ -303,9 +306,14 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 
             ProcessedLog::ReserveFrozen(e) => {
                 let asset = e.asset.to_string();
-                let res =
-                    reserves_repository::set_frozen_status(pool, asset.clone(), true, block_number)
-                        .await;
+                let res = reserves_repository::set_frozen_status(
+                    pool,
+                    asset.clone(),
+                    true,
+                    block_number,
+                    log_index,
+                )
+                .await;
                 if let Err(err) = res {
                     error!("DB Error (Frozen): {}", err);
                 } else {
@@ -320,6 +328,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     asset.clone(),
                     false,
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = res {
@@ -331,9 +340,14 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 
             ProcessedLog::ReservePaused(e) => {
                 let asset = e.asset.to_string();
-                let res =
-                    reserves_repository::set_paused_status(pool, asset.clone(), true, block_number)
-                        .await;
+                let res = reserves_repository::set_paused_status(
+                    pool,
+                    asset.clone(),
+                    true,
+                    block_number,
+                    log_index,
+                )
+                .await;
                 if let Err(err) = res {
                     error!("DB Error (Paused): {}", err);
                 } else {
@@ -348,6 +362,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     asset.clone(),
                     e.enabled,
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = res {
@@ -357,9 +372,14 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 
             ProcessedLog::ReserveActive(e) => {
                 let asset = e.asset.to_string();
-                let res =
-                    reserves_repository::set_active_status(pool, asset.clone(), true, block_number)
-                        .await;
+                let res = reserves_repository::set_active_status(
+                    pool,
+                    asset.clone(),
+                    true,
+                    block_number,
+                    log_index,
+                )
+                .await;
                 if let Err(err) = res {
                     error!("DB Error (Active): {}", err);
                 }
@@ -367,9 +387,13 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 
             ProcessedLog::ReserveDropped(e) => {
                 let asset = e.asset.to_string();
-                let res =
-                    reserves_repository::set_dropped_status(pool, asset.clone(), block_number)
-                        .await;
+                let res = reserves_repository::set_dropped_status(
+                    pool,
+                    asset.clone(),
+                    block_number,
+                    log_index,
+                )
+                .await;
                 if let Err(err) = res {
                     error!("DB Error (Dropped): {}", err);
                 } else {
@@ -385,6 +409,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     asset.clone(),
                     new_strategy,
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = res {
@@ -406,6 +431,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
                     asset.to_string().clone(),
                     stable_borrow_addr.to_string(),
                     block_number,
+                    log_index,
                 )
                 .await;
                 if let Err(err) = res {

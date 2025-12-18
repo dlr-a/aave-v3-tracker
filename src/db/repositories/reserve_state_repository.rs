@@ -42,14 +42,15 @@ pub async fn update_financials(
     var_borrow_rate_val: BigDecimal,
     stable_borrow_rate_val: BigDecimal,
     block_number: i64,
+    log_index: i64,
 ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
-    use crate::db::schema::reserve_state::dsl::*;
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
         reserve_state
             .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number)),
+            .filter(last_updated_block.lt(block_number))
+            .filter(last_updated_log_index.lt(log_index)),
     )
     .set((
         liquidity_index.eq(liq_index_val),
@@ -58,6 +59,7 @@ pub async fn update_financials(
         current_variable_borrow_rate.eq(var_borrow_rate_val),
         current_stable_borrow_rate.eq(stable_borrow_rate_val),
         last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
     ))
     .execute(&mut conn)
     .await?;
