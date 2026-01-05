@@ -6,8 +6,8 @@ use backoff::{ExponentialBackoff, future::retry};
 use eyre::Result;
 use std::time::Duration;
 
-pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone) -> Result<()> {
-    const CONFIRMATIONS: i64 = 10;
+pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'static) -> Result<()> {
+    const CONFIRMATIONS: i64 = 20;
     const STEP: i64 = 1_000;
     const MIN_GAP: i64 = 100;
     const INTERVAL_SECS: u64 = 12;
