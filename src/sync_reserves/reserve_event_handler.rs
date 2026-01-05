@@ -1,5 +1,7 @@
 use crate::db::connection::DbPool;
-use crate::db::repositories::{reserve_state_repository, reserves_repository};
+use crate::db::repositories::{
+    processed_events_repository, reserve_state_repository, reserves_repository,
+};
 use crate::sync_reserves::fetch_reserves::process_reserve;
 use alloy::primitives::Uint;
 use alloy::primitives::address;
@@ -261,250 +263,271 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
     info!("Reserve Handler Started...");
 
     while let Some(log) = stream.next().await {
-        let block_number = log.block_number.unwrap_or(0) as i64;
-        let log_index = log.log_index.unwrap_or(0) as i64;
+        process_reserve_event(pool, provider.clone(), &log).await?;
+    }
 
-        let log_data = match decode_log_type(&log) {
-            Some(data) => data,
-            None => continue,
-        };
+    Ok(())
+}
 
-        let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
-        let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+pub async fn process_reserve_event(
+    pool: &DbPool,
+    provider: impl Provider + Clone + 'static,
+    log: &Log,
+) -> Result<()> {
+    let block_number = log.block_number.unwrap_or(0) as i64;
+    let log_index = log.log_index.unwrap_or(0) as i64;
+    let tx_hash = log.transaction_hash.unwrap().to_string();
 
-        let data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
+    let log_data = match decode_log_type(&log) {
+        Some(data) => data,
+        None => return Ok(()),
+    };
 
-        match log_data {
-            ProcessedLog::ReserveData(e) => {
-                let asset = e.reserve.to_string();
-                let result = reserve_state_repository::update_financials(
-                    pool,
-                    asset.clone(),
-                    to_bigdecimal(e.liquidityIndex)?,
-                    to_bigdecimal(e.variableBorrowIndex)?,
-                    to_bigdecimal(e.liquidityRate)?,
-                    to_bigdecimal(e.variableBorrowRate)?,
-                    to_bigdecimal(e.stableBorrowRate)?,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = result {
-                    error!("DB Error (Rates): {}", err);
-                }
+    let mut conn = pool.get().await?;
+
+    let inserted =
+        processed_events_repository::try_insert_event(&mut conn, tx_hash, log_index, block_number)
+            .await?;
+
+    if !inserted {
+        return Ok(());
+    }
+
+    let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
+    let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+
+    let data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
+
+    match log_data {
+        ProcessedLog::ReserveData(e) => {
+            let asset = e.reserve.to_string();
+            let result = reserve_state_repository::update_financials(
+                pool,
+                asset.clone(),
+                to_bigdecimal(e.liquidityIndex)?,
+                to_bigdecimal(e.variableBorrowIndex)?,
+                to_bigdecimal(e.liquidityRate)?,
+                to_bigdecimal(e.variableBorrowRate)?,
+                to_bigdecimal(e.stableBorrowRate)?,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = result {
+                error!("DB Error (Rates): {}", err);
             }
+        }
 
-            ProcessedLog::ReserveInitialized(e) => {
-                let asset_address = e.asset;
+        ProcessedLog::ReserveInitialized(e) => {
+            let asset_address = e.asset;
 
-                process_reserve(
-                    &pool.clone(),
-                    &provider.clone(),
-                    asset_address,
-                    data_provider_addr,
-                    pool_addr,
-                )
+            process_reserve(
+                &pool.clone(),
+                &provider.clone(),
+                asset_address,
+                data_provider_addr,
+                pool_addr,
+            )
+            .await?;
+        }
+
+        ProcessedLog::CollateralConfig(e) => {
+            let asset = e.asset.to_string();
+            let result = reserves_repository::update_risk_config(
+                pool,
+                asset.clone(),
+                e.ltv.to::<u64>() as i64,
+                e.liquidationThreshold.to::<u64>() as i64,
+                e.liquidationBonus.to::<u64>() as i64,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = result {
+                error!("DB Error (Config): {}", err);
+            }
+        }
+
+        ProcessedLog::ReserveFrozen(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_frozen_status(
+                pool,
+                asset.clone(),
+                true,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Frozen): {}", err);
+            } else {
+                info!("Frozen: {}", asset);
+            }
+        }
+
+        ProcessedLog::ReserveUnfrozen(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_frozen_status(
+                pool,
+                asset.clone(),
+                false,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Unfrozen): {}", err);
+            } else {
+                info!("Unfrozen: {}", asset);
+            }
+        }
+
+        ProcessedLog::ReservePaused(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_paused_status(
+                pool,
+                asset.clone(),
+                true,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Paused): {}", err);
+            } else {
+                info!("⏸Paused: {}", asset);
+            }
+        }
+
+        ProcessedLog::ReserveBorrowing(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_borrowing_status(
+                pool,
+                asset.clone(),
+                e.enabled,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Borrowing): {}", err);
+            }
+        }
+
+        ProcessedLog::ReserveActive(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_active_status(
+                pool,
+                asset.clone(),
+                true,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Active): {}", err);
+            }
+        }
+
+        ProcessedLog::ReserveDropped(e) => {
+            let asset = e.asset.to_string();
+            let res = reserves_repository::set_dropped_status(
+                pool,
+                asset.clone(),
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Dropped): {}", err);
+            } else {
+                info!("Dropped: {}", asset);
+            }
+        }
+
+        ProcessedLog::InterestRateStrategy(e) => {
+            let asset = e.asset.to_string();
+            let new_strategy = e.newStrategy.to_string();
+            let res = reserves_repository::update_strategy_address(
+                pool,
+                asset.clone(),
+                new_strategy,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Strategy): {}", err);
+            }
+        }
+
+        ProcessedLog::ReserveStableRateBorrowing(e) => {
+            let asset = e.asset;
+            let token_addresses = data_provider
+                .getReserveTokensAddresses(asset)
+                .call()
                 .await?;
+
+            let stable_borrow_addr = token_addresses.stableDebtTokenAddress;
+
+            let res = reserves_repository::update_stable_borrow_address(
+                pool,
+                asset.to_string().clone(),
+                stable_borrow_addr.to_string(),
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Stable Borrowing): {}", err);
             }
+        }
 
-            ProcessedLog::CollateralConfig(e) => {
-                let asset = e.asset.to_string();
-                let result = reserves_repository::update_risk_config(
-                    pool,
-                    asset.clone(),
-                    e.ltv.to::<u64>() as i64,
-                    e.liquidationThreshold.to::<u64>() as i64,
-                    e.liquidationBonus.to::<u64>() as i64,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = result {
-                    error!("DB Error (Config): {}", err);
-                }
+        ProcessedLog::SupplyCapChanged(e) => {
+            let asset = e.asset;
+
+            let res = reserves_repository::update_supply_cap(
+                pool,
+                asset.to_string().clone(),
+                to_bigdecimal(e.newSupplyCap)?,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Supply Cap): {}", err);
             }
+        }
 
-            ProcessedLog::ReserveFrozen(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_frozen_status(
-                    pool,
-                    asset.clone(),
-                    true,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Frozen): {}", err);
-                } else {
-                    info!("Frozen: {}", asset);
-                }
+        ProcessedLog::BorrowCapChanged(e) => {
+            let asset = e.asset;
+
+            let res = reserves_repository::update_borrow_cap(
+                pool,
+                asset.to_string().clone(),
+                to_bigdecimal(e.newBorrowCap)?,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Borrow Cap): {}", err);
             }
+        }
 
-            ProcessedLog::ReserveUnfrozen(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_frozen_status(
-                    pool,
-                    asset.clone(),
-                    false,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Unfrozen): {}", err);
-                } else {
-                    info!("Unfrozen: {}", asset);
-                }
-            }
+        ProcessedLog::ReserveFactorChanged(e) => {
+            let asset = e.asset;
 
-            ProcessedLog::ReservePaused(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_paused_status(
-                    pool,
-                    asset.clone(),
-                    true,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Paused): {}", err);
-                } else {
-                    info!("⏸Paused: {}", asset);
-                }
-            }
-
-            ProcessedLog::ReserveBorrowing(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_borrowing_status(
-                    pool,
-                    asset.clone(),
-                    e.enabled,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Borrowing): {}", err);
-                }
-            }
-
-            ProcessedLog::ReserveActive(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_active_status(
-                    pool,
-                    asset.clone(),
-                    true,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Active): {}", err);
-                }
-            }
-
-            ProcessedLog::ReserveDropped(e) => {
-                let asset = e.asset.to_string();
-                let res = reserves_repository::set_dropped_status(
-                    pool,
-                    asset.clone(),
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Dropped): {}", err);
-                } else {
-                    info!("Dropped: {}", asset);
-                }
-            }
-
-            ProcessedLog::InterestRateStrategy(e) => {
-                let asset = e.asset.to_string();
-                let new_strategy = e.newStrategy.to_string();
-                let res = reserves_repository::update_strategy_address(
-                    pool,
-                    asset.clone(),
-                    new_strategy,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Strategy): {}", err);
-                }
-            }
-
-            ProcessedLog::ReserveStableRateBorrowing(e) => {
-                let asset = e.asset;
-                let token_addresses = data_provider
-                    .getReserveTokensAddresses(asset)
-                    .call()
-                    .await?;
-
-                let stable_borrow_addr = token_addresses.stableDebtTokenAddress;
-
-                let res = reserves_repository::update_stable_borrow_address(
-                    pool,
-                    asset.to_string().clone(),
-                    stable_borrow_addr.to_string(),
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Stable Borrowing): {}", err);
-                }
-            }
-
-            ProcessedLog::SupplyCapChanged(e) => {
-                let asset = e.asset;
-
-                let res = reserves_repository::update_supply_cap(
-                    pool,
-                    asset.to_string().clone(),
-                    to_bigdecimal(e.newSupplyCap)?,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Supply Cap): {}", err);
-                }
-            }
-
-            ProcessedLog::BorrowCapChanged(e) => {
-                let asset = e.asset;
-
-                let res = reserves_repository::update_borrow_cap(
-                    pool,
-                    asset.to_string().clone(),
-                    to_bigdecimal(e.newBorrowCap)?,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Borrow Cap): {}", err);
-                }
-            }
-
-            ProcessedLog::ReserveFactorChanged(e) => {
-                let asset = e.asset;
-
-                let res = reserves_repository::update_reserve_factor(
-                    pool,
-                    asset.to_string().clone(),
-                    e.newReserveFactor.to::<u64>() as i64,
-                    block_number,
-                    log_index,
-                )
-                .await;
-                if let Err(err) = res {
-                    error!("DB Error (Reserve Factor): {}", err);
-                }
+            let res = reserves_repository::update_reserve_factor(
+                pool,
+                asset.to_string().clone(),
+                e.newReserveFactor.to::<u64>() as i64,
+                block_number,
+                log_index,
+            )
+            .await;
+            if let Err(err) = res {
+                error!("DB Error (Reserve Factor): {}", err);
             }
         }
     }

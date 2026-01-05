@@ -1,5 +1,8 @@
+use crate::db::schema::processed_events;
 use crate::db::schema::reserve_state;
+use crate::db::schema::sync_status;
 use bigdecimal::BigDecimal;
+use chrono::NaiveDateTime;
 use diesel::prelude::*;
 
 #[derive(Insertable, Queryable, Selectable, Debug, Clone)]
@@ -102,4 +105,36 @@ pub struct NewReserveState {
     pub unbacked: BigDecimal,
     pub isolation_mode_total_debt: BigDecimal,
     pub last_updated_block: i64,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = processed_events)]
+pub struct NewProcessedEvent<'a> {
+    pub tx_hash: &'a str,
+    pub log_index: i64,
+    pub block_number: i64,
+}
+
+#[derive(Debug, Queryable, Identifiable)]
+#[diesel(table_name = processed_events)]
+#[diesel(primary_key(tx_hash, log_index))]
+pub struct ProcessedEvent {
+    pub tx_hash: String,
+    pub log_index: i64,
+    pub block_number: i64,
+    pub processed_at: NaiveDateTime,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = sync_status)]
+pub struct NewSyncStatus {
+    pub id: i32,
+    pub last_processed_block: i64,
+}
+
+#[derive(Debug, Queryable, Identifiable)]
+#[diesel(table_name = sync_status)]
+pub struct SyncStatus {
+    pub id: i32,
+    pub last_processed_block: i64,
 }

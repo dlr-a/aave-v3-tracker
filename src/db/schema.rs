@@ -1,6 +1,16 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    processed_events (tx_hash, log_index) {
+        #[max_length = 66]
+        tx_hash -> Bpchar,
+        log_index -> BigInt,
+        block_number -> Int8,
+        processed_at -> Nullable<Timestamp>,
+    }
+}
+
+diesel::table! {
     reserve_state (asset_address) {
         #[max_length = 42]
         asset_address -> Bpchar,
@@ -52,6 +62,18 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    sync_status (id) {
+        id -> Int4,
+        last_processed_block -> Int8,
+    }
+}
+
 diesel::joinable!(reserve_state -> reserves (asset_address));
 
-diesel::allow_tables_to_appear_in_same_query!(reserve_state, reserves,);
+diesel::allow_tables_to_appear_in_same_query!(
+    processed_events,
+    reserve_state,
+    reserves,
+    sync_status,
+);

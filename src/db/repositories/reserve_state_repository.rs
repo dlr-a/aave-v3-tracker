@@ -47,10 +47,11 @@ pub async fn update_financials(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserve_state
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserve_state.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         liquidity_index.eq(liq_index_val),

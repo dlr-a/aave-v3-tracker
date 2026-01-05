@@ -42,3 +42,26 @@ CREATE TABLE reserve_state (
     last_updated_block BIGINT NOT NULL DEFAULT 0,
     last_updated_log_index BIGINT NOT NULL DEFAULT 0
 );
+
+CREATE TABLE processed_events (
+    tx_hash CHAR(66) NOT NULL,
+    log_index BIGINT NOT NULL,
+    block_number BIGINT NOT NULL,
+    processed_at TIMESTAMP DEFAULT now(),
+
+    PRIMARY KEY (tx_hash, log_index)
+);
+
+CREATE INDEX idx_processed_events_block
+ON processed_events(block_number);
+
+
+
+CREATE TABLE sync_status (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    last_processed_block BIGINT NOT NULL
+);
+
+INSERT INTO sync_status (id, last_processed_block)
+VALUES (1, 0)
+ON CONFLICT (id) DO NOTHING;

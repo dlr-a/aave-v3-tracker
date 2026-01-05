@@ -51,10 +51,11 @@ pub async fn update_reserve_factor(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         reserve_factor.eq(rsrv_factor),
@@ -77,10 +78,11 @@ pub async fn update_supply_cap(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         supply_cap.eq(sply_cap),
@@ -103,10 +105,11 @@ pub async fn update_borrow_cap(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         borrow_cap.eq(brw_cap),
@@ -129,10 +132,11 @@ pub async fn update_stable_borrow_address(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         s_debt_token_address.eq(stable_borrow_address),
@@ -157,10 +161,11 @@ pub async fn update_risk_config(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         ltv.eq(ltv_val),
@@ -185,10 +190,11 @@ pub async fn set_frozen_status(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         is_frozen.eq(status),
@@ -211,10 +217,11 @@ pub async fn set_paused_status(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         is_paused.eq(status),
@@ -237,10 +244,11 @@ pub async fn set_borrowing_status(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         is_borrowing_enabled.eq(status),
@@ -263,10 +271,11 @@ pub async fn set_active_status(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         is_active.eq(status),
@@ -288,10 +297,11 @@ pub async fn set_dropped_status(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         is_dropped.eq(true),
@@ -315,10 +325,11 @@ pub async fn update_strategy_address(
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
-        reserves
-            .filter(asset_address.eq(asset))
-            .filter(last_updated_block.lt(block_number))
-            .filter(last_updated_log_index.lt(log_index)),
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
     )
     .set((
         interest_rate_strategy_address.eq(new_strategy),

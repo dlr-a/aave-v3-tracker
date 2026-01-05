@@ -1,11 +1,16 @@
 mod db;
 mod errors;
+mod indexer;
 mod sync_reserves;
+use crate::db::repositories::sync_status_repository;
+use crate::indexer::backfill_loop::backfill_loop;
 use crate::sync_reserves::fetch_reserves::fetch_reserves;
 use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
+use alloy_provider::Provider;
+use alloy_provider::ProviderBuilder;
 use dotenvy::dotenv;
 use std::env;
-use tracing::info;
+use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,14 +20,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenv().ok();
 
-    let rpc_url = env::var("RPC_URL").expect("Couldn't find RPC_URL");
+    let ws_rpc_url = env::var("WS_RPC_URL").expect("Couldn't find WS_RPC_URL");
+    let http_rpc_url = env::var("HTTP_RPC_URL").expect("Couldn't find HTTP_RPC_URL");
+    let http_provider = ProviderBuilder::new().connect_http(http_rpc_url.parse()?);
+
     let pool = db::connection::init_pool().await;
+    let mut conn = pool.get().await?;
 
-    info!("Starting reserves synchronization...");
-    fetch_reserves(&pool, rpc_url.clone()).await?;
-    info!("Reserves synced!");
+    let current_head = http_provider.get_block_number().await? as i64;
+    let last_block = sync_status_repository::get_last_block(&mut conn).await?;
 
-    reserve_event_handler(&pool, rpc_url.clone()).await?;
+    if last_block == 0 {
+        info!("No snapshot found. Running initial fetch_reserves…");
+        info!("Starting reserves synchronization...");
 
+        fetch_reserves(&pool, http_rpc_url.clone()).await?;
+
+        sync_status_repository::update_last_block(&mut conn, current_head).await?;
+        info!("Reserves synced successfully!");
+    }
+
+    let ws_pool = pool.clone();
+    let ws_url = ws_rpc_url.clone();
+    tokio::spawn(async move {
+        info!("Starting WS event handler...");
+        if let Err(e) = reserve_event_handler(&ws_pool, ws_url).await {
+            error!("WS handler error: {:?}", e);
+        }
+    });
+
+    tokio::spawn(async move {
+        info!("Starting backfill loop...");
+        if let Err(e) = backfill_loop(&pool, http_provider.clone()).await {
+            error!("Backfill loop error: {:?}", e);
+        }
+    });
+
+    futures::future::pending::<()>().await;
     Ok(())
 }

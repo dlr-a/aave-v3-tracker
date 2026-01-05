@@ -1,12 +1,10 @@
 use crate::db::connection::DbPool;
 use crate::db::models::{NewReserve, NewReserveState};
 use crate::db::repositories::{reserve_state_repository, reserves_repository};
+use crate::errors::TrackerError;
 use alloy::primitives::{Address, U256, Uint, address};
 use alloy::providers::Provider;
-use alloy::{
-    providers::{ProviderBuilder, WsConnect},
-    sol,
-};
+use alloy::{providers::ProviderBuilder, sol};
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
 use bigdecimal::BigDecimal;
@@ -69,11 +67,7 @@ sol! {
 }
 
 pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
-    let ws = WsConnect::new(rpc_url);
-    let provider = ProviderBuilder::new()
-        .connect_ws(ws)
-        .await
-        .wrap_err("Couldn't connect to the WS")?;
+    let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
 
     let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
     let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
@@ -117,6 +111,7 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
                     "FAILED PERMANENTLY: Could not sync {:?}. Error: {:?}",
                     token.symbol, e
                 );
+                return Err(e.into());
             }
         }
     }
@@ -144,7 +139,15 @@ where
     let token_addresses = data_provider
         .getReserveTokensAddresses(asset_address)
         .call()
-        .await?;
+        .await
+        .map_err(|e| {
+            error!(
+                "RPC Error: Failed to fetch token addresses for {}",
+                asset_address
+            );
+            TrackerError::Contract(e)
+        })?;
+
     let reserve_config = data_provider
         .getReserveConfigurationData(asset_address)
         .call()
@@ -225,7 +228,16 @@ where
         last_updated_block: current_block as i64,
     };
 
-    reserves_repository::sync_reserve(pool, reserve_data).await?;
+    reserves_repository::sync_reserve(pool, reserve_data)
+        .await
+        .map_err(|e| {
+            error!(
+                asset = %asset_address,
+                error = %e,
+                "failed to sync reserve"
+            );
+            e
+        })?;
     reserve_state_repository::sync_state(pool, reserve_state).await?;
 
     Ok(())
