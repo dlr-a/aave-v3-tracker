@@ -12,12 +12,14 @@ use alloy::{
     sol,
     sol_types::SolEvent,
 };
+use backoff::{ExponentialBackoff, future::retry};
 use bigdecimal::BigDecimal;
 use eyre::eyre;
 use eyre::{Context, Result};
 use futures_util::StreamExt;
 use std::str::FromStr;
-use tracing::{error, info};
+use std::time::Duration;
+use tracing::{error, info, warn};
 
 pub enum ProcessedLog {
     ReserveData(ReserveDataUpdated),
@@ -263,7 +265,9 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
     info!("Reserve Handler Started...");
 
     while let Some(log) = stream.next().await {
-        process_reserve_event(pool, provider.clone(), &log).await?;
+        if let Err(e) = process_reserve_event(pool, provider.clone(), &log).await {
+            error!(error = ?e, "Failed to process reserve event, continuing...");
+        }
     }
 
     Ok(())
@@ -289,6 +293,8 @@ pub async fn process_reserve_event(
         processed_events_repository::try_insert_event(&mut conn, tx_hash, log_index, block_number)
             .await?;
 
+    drop(conn);
+
     if !inserted {
         return Ok(());
     }
@@ -298,10 +304,18 @@ pub async fn process_reserve_event(
 
     let data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
 
+    let rpc_backoff = ExponentialBackoff {
+        max_elapsed_time: Some(Duration::from_secs(30)),
+        initial_interval: Duration::from_millis(100),
+        max_interval: Duration::from_secs(5),
+        multiplier: 2.0,
+        ..Default::default()
+    };
+
     match log_data {
         ProcessedLog::ReserveData(e) => {
             let asset = e.reserve.to_string();
-            let result = reserve_state_repository::update_financials(
+            reserve_state_repository::update_financials(
                 pool,
                 asset.clone(),
                 to_bigdecimal(e.liquidityIndex)?,
@@ -312,28 +326,32 @@ pub async fn process_reserve_event(
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = result {
-                error!("DB Error (Rates): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update financials for asset {}", asset))?;
         }
 
         ProcessedLog::ReserveInitialized(e) => {
             let asset_address = e.asset;
 
             process_reserve(
-                &pool.clone(),
-                &provider.clone(),
+                pool,
+                &provider,
                 asset_address,
                 data_provider_addr,
                 pool_addr,
             )
-            .await?;
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "Failed to process reserve initialization for {}",
+                    asset_address
+                )
+            })?;
         }
 
         ProcessedLog::CollateralConfig(e) => {
             let asset = e.asset.to_string();
-            let result = reserves_repository::update_risk_config(
+            reserves_repository::update_risk_config(
                 pool,
                 asset.clone(),
                 e.ltv.to::<u64>() as i64,
@@ -342,193 +360,169 @@ pub async fn process_reserve_event(
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = result {
-                error!("DB Error (Config): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update risk config for {}", asset))?;
         }
 
         ProcessedLog::ReserveFrozen(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_frozen_status(
+            reserves_repository::set_frozen_status(
                 pool,
                 asset.clone(),
                 true,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Frozen): {}", err);
-            } else {
-                info!("Frozen: {}", asset);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to set frozen status for {}", asset))?;
+            info!("Frozen: {}", asset);
         }
 
         ProcessedLog::ReserveUnfrozen(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_frozen_status(
+            reserves_repository::set_frozen_status(
                 pool,
                 asset.clone(),
                 false,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Unfrozen): {}", err);
-            } else {
-                info!("Unfrozen: {}", asset);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to unfreeze {}", asset))?;
+            info!("Unfrozen: {}", asset);
         }
 
         ProcessedLog::ReservePaused(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_paused_status(
+            reserves_repository::set_paused_status(
                 pool,
                 asset.clone(),
                 true,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Paused): {}", err);
-            } else {
-                info!("⏸Paused: {}", asset);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to pause {}", asset))?;
+            info!("⏸ Paused: {}", asset);
         }
 
         ProcessedLog::ReserveBorrowing(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_borrowing_status(
+            reserves_repository::set_borrowing_status(
                 pool,
                 asset.clone(),
                 e.enabled,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Borrowing): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update borrowing status for {}", asset))?;
         }
 
         ProcessedLog::ReserveActive(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_active_status(
+            reserves_repository::set_active_status(
                 pool,
                 asset.clone(),
                 true,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Active): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to activate {}", asset))?;
         }
 
         ProcessedLog::ReserveDropped(e) => {
             let asset = e.asset.to_string();
-            let res = reserves_repository::set_dropped_status(
-                pool,
-                asset.clone(),
-                block_number,
-                log_index,
-            )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Dropped): {}", err);
-            } else {
-                info!("Dropped: {}", asset);
-            }
+            reserves_repository::set_dropped_status(pool, asset.clone(), block_number, log_index)
+                .await
+                .wrap_err_with(|| format!("Failed to mark {} as dropped", asset))?;
+            info!("Dropped: {}", asset);
         }
 
         ProcessedLog::InterestRateStrategy(e) => {
             let asset = e.asset.to_string();
             let new_strategy = e.newStrategy.to_string();
-            let res = reserves_repository::update_strategy_address(
+            reserves_repository::update_strategy_address(
                 pool,
                 asset.clone(),
                 new_strategy,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Strategy): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update strategy for {}", asset))?;
         }
 
         ProcessedLog::ReserveStableRateBorrowing(e) => {
             let asset = e.asset;
-            let token_addresses = data_provider
-                .getReserveTokensAddresses(asset)
-                .call()
-                .await?;
+
+            let token_addresses = retry(rpc_backoff, || {
+                let dp = data_provider.clone();
+                let asset_clone = asset.clone();
+                async move {
+                    dp.getReserveTokensAddresses(asset_clone)
+                        .call()
+                        .await
+                        .map_err(|e| {
+                            warn!("RPC error fetching token addresses: {}", e);
+                            backoff::Error::transient(e)
+                        })
+                }
+            })
+            .await
+            .wrap_err_with(|| format!("Failed to fetch token addresses for {}", asset))?;
 
             let stable_borrow_addr = token_addresses.stableDebtTokenAddress;
 
-            let res = reserves_repository::update_stable_borrow_address(
+            reserves_repository::update_stable_borrow_address(
                 pool,
-                asset.to_string().clone(),
+                asset.to_string(),
                 stable_borrow_addr.to_string(),
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Stable Borrowing): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update stable borrow address for {}", asset))?;
         }
 
         ProcessedLog::SupplyCapChanged(e) => {
-            let asset = e.asset;
-
-            let res = reserves_repository::update_supply_cap(
+            let asset = e.asset.to_string();
+            reserves_repository::update_supply_cap(
                 pool,
-                asset.to_string().clone(),
+                asset.clone(),
                 to_bigdecimal(e.newSupplyCap)?,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Supply Cap): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update supply cap for {}", asset))?;
         }
 
         ProcessedLog::BorrowCapChanged(e) => {
-            let asset = e.asset;
-
-            let res = reserves_repository::update_borrow_cap(
+            let asset = e.asset.to_string();
+            reserves_repository::update_borrow_cap(
                 pool,
-                asset.to_string().clone(),
+                asset.clone(),
                 to_bigdecimal(e.newBorrowCap)?,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Borrow Cap): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update borrow cap for {}", asset))?;
         }
 
         ProcessedLog::ReserveFactorChanged(e) => {
-            let asset = e.asset;
-
-            let res = reserves_repository::update_reserve_factor(
+            let asset = e.asset.to_string();
+            reserves_repository::update_reserve_factor(
                 pool,
-                asset.to_string().clone(),
+                asset.clone(),
                 e.newReserveFactor.to::<u64>() as i64,
                 block_number,
                 log_index,
             )
-            .await;
-            if let Err(err) = res {
-                error!("DB Error (Reserve Factor): {}", err);
-            }
+            .await
+            .wrap_err_with(|| format!("Failed to update reserve factor for {}", asset))?;
         }
     }
 

@@ -47,7 +47,7 @@ pub async fn update_reserve_factor(
     rsrv_factor: i64,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -74,7 +74,7 @@ pub async fn update_supply_cap(
     sply_cap: BigDecimal,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -101,7 +101,7 @@ pub async fn update_borrow_cap(
     brw_cap: BigDecimal,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -128,7 +128,7 @@ pub async fn update_stable_borrow_address(
     stable_borrow_address: String,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -157,7 +157,7 @@ pub async fn update_risk_config(
     bonus_val: i64,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -186,7 +186,7 @@ pub async fn set_frozen_status(
     status: bool,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -213,7 +213,7 @@ pub async fn set_paused_status(
     status: bool,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -240,7 +240,7 @@ pub async fn set_borrowing_status(
     status: bool,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -267,7 +267,7 @@ pub async fn set_active_status(
     status: bool,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -293,7 +293,7 @@ pub async fn set_dropped_status(
     asset: String,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(
@@ -321,7 +321,7 @@ pub async fn update_strategy_address(
     new_strategy: String,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(

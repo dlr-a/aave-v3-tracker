@@ -4,7 +4,7 @@ diesel::table! {
     processed_events (tx_hash, log_index) {
         #[max_length = 66]
         tx_hash -> Bpchar,
-        log_index -> BigInt,
+        log_index -> Int8,
         block_number -> Int8,
         processed_at -> Nullable<Timestamp>,
     }

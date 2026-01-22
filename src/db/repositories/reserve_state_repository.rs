@@ -43,7 +43,7 @@ pub async fn update_financials(
     stable_borrow_rate_val: BigDecimal,
     block_number: i64,
     log_index: i64,
-) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<usize> {
     let mut conn = pool.get().await?;
 
     let result = diesel::update(

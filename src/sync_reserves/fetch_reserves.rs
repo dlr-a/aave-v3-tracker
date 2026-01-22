@@ -1,7 +1,6 @@
 use crate::db::connection::DbPool;
 use crate::db::models::{NewReserve, NewReserveState};
 use crate::db::repositories::{reserve_state_repository, reserves_repository};
-use crate::errors::TrackerError;
 use alloy::primitives::{Address, U256, Uint, address};
 use alloy::providers::Provider;
 use alloy::{providers::ProviderBuilder, sol};
@@ -11,12 +10,31 @@ use bigdecimal::BigDecimal;
 use eyre::{Context, Result, eyre};
 use std::str::FromStr;
 use std::time::Duration;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 fn to_bigdecimal<const BITS: usize, const LIMBS: usize>(
     val: Uint<BITS, LIMBS>,
 ) -> Result<BigDecimal> {
     BigDecimal::from_str(&val.to_string()).map_err(|e| eyre!("BigDecimal conversion error: {}", e))
+}
+
+fn to_i64<const BITS: usize, const LIMBS: usize>(
+    val: Uint<BITS, LIMBS>,
+    field_name: &str,
+) -> Result<i64> {
+    let as_u64 = val.to::<u64>();
+    i64::try_from(as_u64).map_err(|_| eyre!("{} overflow: {} exceeds i64::MAX", field_name, as_u64))
+}
+
+fn create_rpc_backoff() -> ExponentialBackoff {
+    ExponentialBackoff {
+        max_elapsed_time: Some(Duration::from_secs(30)),
+        initial_interval: Duration::from_millis(100),
+        max_interval: Duration::from_secs(5),
+        multiplier: 2.0,
+        randomization_factor: 0.5,
+        ..Default::default()
+    }
 }
 
 sol! {
@@ -27,14 +45,12 @@ sol! {
         function getAllReservesTokens() external view returns (TokenData[] memory);
         function getReserveTokensAddresses(address asset) external view override returns (address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress);
         function getReserveConfigurationData(address asset) external view override returns (uint256 decimals, uint256 ltv, uint256 liquidationThreshold, uint256 liquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool stableBorrowRateEnabled, bool isActive, bool isFrozen);
-
         function getReserveCaps(address asset) external view override returns (uint256 borrowCap, uint256 supplyCap);
-
     }
+
     #[sol(rpc)]
     interface IERC20 {
         function symbol() external view returns (string);
-
         function totalSupply() external view returns (uint256);
     }
 
@@ -81,37 +97,24 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
         .wrap_err("Failed to fetch all reserve tokens from ProtocolDataProvider")?;
 
     for token in tokens {
-        let backoff_strategy = ExponentialBackoff {
-            max_elapsed_time: Some(Duration::from_secs(60)),
-            ..Default::default()
-        };
-
-        let op = || async {
-            let p_clone = provider.clone();
-            let pool_clone = pool.clone();
-
-            process_reserve(
-                &pool_clone,
-                &p_clone,
-                token.tokenAddress,
-                data_provider_addr,
-                pool_addr,
-            )
-            .await
-            .map_err(|e| {
-                info!("Error fetching {}: {}. Retrying...", token.symbol, e);
-                backoff::Error::transient(e)
-            })
-        };
-
-        match retry(backoff_strategy, op).await {
+        match process_reserve(
+            pool,
+            &provider,
+            token.tokenAddress,
+            data_provider_addr,
+            pool_addr,
+        )
+        .await
+        {
             Ok(_) => info!("Synced: {}", token.symbol),
             Err(e) => {
                 error!(
-                    "FAILED PERMANENTLY: Could not sync {:?}. Error: {:?}",
-                    token.symbol, e
+                    symbol = %token.symbol,
+                    address = %token.tokenAddress,
+                    error = %e,
+                    "Failed to sync reserve"
                 );
-                return Err(e.into());
+                return Err(e);
             }
         }
     }
@@ -130,32 +133,82 @@ where
 {
     let data_provider = IProtocolDataProvider::new(dp_addr, provider.clone());
     let pool_contract = IPool::new(pool_addr, provider.clone());
+    let rpc_backoff = create_rpc_backoff();
 
-    let current_block = provider
-        .get_block_number()
-        .await
-        .wrap_err("Failed to fetch current block number")?;
+    let current_block = retry(rpc_backoff.clone(), || {
+        let p = provider.clone();
+        async move {
+            p.get_block_number().await.map_err(|e| {
+                warn!("Failed to get block number: {}", e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .wrap_err("Failed to fetch current block number")?;
 
-    let token_addresses = data_provider
-        .getReserveTokensAddresses(asset_address)
-        .call()
-        .await
-        .map_err(|e| {
-            error!(
-                "RPC Error: Failed to fetch token addresses for {}",
-                asset_address
-            );
-            TrackerError::Contract(e)
-        })?;
+    let token_addresses = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getReserveTokensAddresses(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch token addresses for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .wrap_err_with(|| format!("Failed to fetch token addresses for {}", asset_address))?;
 
-    let reserve_config = data_provider
-        .getReserveConfigurationData(asset_address)
-        .call()
-        .await?;
-    let pool_data = pool_contract.getReserveData(asset_address).call().await?;
-    let caps = data_provider.getReserveCaps(asset_address).call().await?;
+    let reserve_config = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getReserveConfigurationData(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch reserve config for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .wrap_err_with(|| format!("Failed to fetch reserve config for {}", asset_address))?;
+
+    let pool_data = retry(rpc_backoff.clone(), || {
+        let pc = pool_contract.clone();
+        async move {
+            pc.getReserveData(asset_address).call().await.map_err(|e| {
+                warn!("Failed to fetch pool data for {}: {}", asset_address, e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .wrap_err_with(|| format!("Failed to fetch pool data for {}", asset_address))?;
+
+    let caps = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getReserveCaps(asset_address).call().await.map_err(|e| {
+                warn!("Failed to fetch reserve caps for {}: {}", asset_address, e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .wrap_err_with(|| format!("Failed to fetch reserve caps for {}", asset_address))?;
 
     let erc20 = IERC20::new(asset_address, provider.clone());
+
     let symbol = erc20
         .symbol()
         .call()
@@ -164,23 +217,49 @@ where
         .unwrap_or("UNKNOWN".to_string());
 
     let config_data: U256 = pool_data.configuration.data;
-    let reserve_factor = reserve_config.reserveFactor.to::<u64>() as i64;
     let is_paused = !((config_data >> 60usize).bitand(U256::from(1)).is_zero());
-    let reserve_id = pool_data.id as i32;
-
-    let ltv = reserve_config.ltv.to::<u64>() as i64;
-    let threshold = reserve_config.liquidationThreshold.to::<u64>() as i64;
-    let bonus = reserve_config.liquidationBonus.to::<u64>() as i64;
 
     let atoken = IERC20::new(token_addresses.aTokenAddress, provider.clone());
-    let total_liquidity_raw = atoken.totalSupply().call().await?;
+
+    let total_liquidity_raw = retry(rpc_backoff.clone(), || {
+        let at = atoken.clone();
+        async move {
+            at.totalSupply().call().await.map_err(|e| {
+                warn!("Failed to fetch aToken supply: {}", e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .wrap_err("Failed to fetch aToken total supply")?;
 
     let vtoken = IERC20::new(token_addresses.variableDebtTokenAddress, provider.clone());
-    let total_variable_raw = vtoken.totalSupply().call().await?;
+
+    let total_variable_raw = retry(rpc_backoff.clone(), || {
+        let vt = vtoken.clone();
+        async move {
+            vt.totalSupply().call().await.map_err(|e| {
+                warn!("Failed to fetch variable debt: {}", e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .wrap_err("Failed to fetch variable debt total supply")?;
 
     let total_stable_raw = if token_addresses.stableDebtTokenAddress != Address::ZERO {
         let stoken = IERC20::new(token_addresses.stableDebtTokenAddress, provider.clone());
-        stoken.totalSupply().call().await?
+        retry(rpc_backoff.clone(), || {
+            let st = stoken.clone();
+            async move {
+                st.totalSupply().call().await.map_err(|e| {
+                    warn!("Failed to fetch stable debt for {}: {}", asset_address, e);
+                    backoff::Error::transient(e)
+                })
+            }
+        })
+        .await
+        .wrap_err_with(|| format!("Failed to fetch stable debt for {}", asset_address))?
     } else {
         U256::ZERO
     };
@@ -188,24 +267,28 @@ where
     let reserve_data = NewReserve {
         asset_address: asset_address.to_string(),
         symbol: symbol.clone(),
-        decimals: reserve_config.decimals.to::<u64>() as i64,
-        reserve_id,
-        ltv,
-        liquidation_threshold: threshold,
-        liquidation_bonus: bonus,
+        decimals: to_i64(reserve_config.decimals, "decimals")?,
+        reserve_id: pool_data.id as i32,
+        ltv: to_i64(reserve_config.ltv, "ltv")?,
+        liquidation_threshold: to_i64(
+            reserve_config.liquidationThreshold,
+            "liquidation_threshold",
+        )?,
+        liquidation_bonus: to_i64(reserve_config.liquidationBonus, "liquidation_bonus")?,
         is_active: reserve_config.isActive,
         is_frozen: reserve_config.isFrozen,
         is_paused,
         supply_cap: to_bigdecimal(caps.supplyCap)?,
         borrow_cap: to_bigdecimal(caps.borrowCap)?,
-        reserve_factor,
+        reserve_factor: to_i64(reserve_config.reserveFactor, "reserve_factor")?,
         is_borrowing_enabled: reserve_config.borrowingEnabled,
         is_dropped: false,
         atoken_address: token_addresses.aTokenAddress.to_string(),
         v_debt_token_address: token_addresses.variableDebtTokenAddress.to_string(),
         s_debt_token_address: token_addresses.stableDebtTokenAddress.to_string(),
         interest_rate_strategy_address: pool_data.interestRateStrategyAddress.to_string(),
-        last_updated_block: current_block as i64,
+        last_updated_block: i64::try_from(current_block)
+            .map_err(|_| eyre!("block number overflow: {}", current_block))?,
     };
 
     let reserve_state = NewReserveState {
@@ -217,15 +300,14 @@ where
             pool_data.currentVariableBorrowRate,
         ))?,
         current_stable_borrow_rate: to_bigdecimal(U256::from(pool_data.currentStableBorrowRate))?,
-
         total_liquidity: to_bigdecimal(total_liquidity_raw)?,
         total_variable_debt: to_bigdecimal(total_variable_raw)?,
         total_stable_debt: to_bigdecimal(total_stable_raw)?,
-
         accrued_to_treasury: to_bigdecimal(U256::from(pool_data.accruedToTreasury))?,
         unbacked: to_bigdecimal(U256::from(pool_data.unbacked))?,
         isolation_mode_total_debt: to_bigdecimal(U256::from(pool_data.isolationModeTotalDebt))?,
-        last_updated_block: current_block as i64,
+        last_updated_block: i64::try_from(current_block)
+            .map_err(|_| eyre!("block number overflow: {}", current_block))?,
     };
 
     reserves_repository::sync_reserve(pool, reserve_data)
@@ -234,11 +316,21 @@ where
             error!(
                 asset = %asset_address,
                 error = %e,
-                "failed to sync reserve"
+                "Failed to sync reserve"
             );
             e
         })?;
-    reserve_state_repository::sync_state(pool, reserve_state).await?;
+
+    reserve_state_repository::sync_state(pool, reserve_state)
+        .await
+        .map_err(|e| {
+            error!(
+                asset = %asset_address,
+                error = %e,
+                "Failed to sync reserve state"
+            );
+            e
+        })?;
 
     Ok(())
 }
