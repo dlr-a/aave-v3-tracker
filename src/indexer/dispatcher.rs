@@ -1,11 +1,8 @@
+// use crate::abi::Transfer;
 use crate::db::connection::DbPool;
 use crate::sync_reserves::reserve_event_handler::process_reserve_event;
-use alloy::{providers::Provider, rpc::types::eth::Log, sol};
+use alloy::{providers::Provider, rpc::types::eth::Log};
 use eyre::Result;
-
-sol! {
-    event Transfer(address indexed from, address indexed to, uint256 value);
-}
 
 pub async fn handle_log_logic(
     pool: &DbPool,

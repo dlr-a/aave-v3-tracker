@@ -1,3 +1,9 @@
+use crate::abi::{
+    BorrowCapChanged, CollateralConfigurationChanged, ReserveActive, ReserveBorrowing,
+    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFrozen, ReserveInitialized,
+    ReserveInterestRateStrategyChanged, ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen,
+    SupplyCapChanged, Transfer,
+};
 use crate::db::connection::DbPool;
 use crate::db::repositories::sync_status_repository;
 use crate::indexer::dispatcher::handle_log_logic;
@@ -5,110 +11,9 @@ use alloy::primitives::Address;
 use alloy::{providers::Provider, rpc::types::eth::Filter};
 use alloy_primitives::address;
 use alloy_sol_types::SolEvent;
-use alloy_sol_types::sol;
 use backoff::{ExponentialBackoff, future::retry};
 use eyre::{Context, Result};
 use std::time::{Duration, Instant};
-
-sol! {
-    event Transfer(address indexed from, address indexed to, uint256 value);
-
-    event ReserveInitialized(
-        address indexed asset,
-        address indexed aToken,
-        address stableDebtToken,
-        address variableDebtToken,
-        address interestRateStrategyAddress
-    );
-
-    event ReserveDataUpdated(
-        address indexed reserve,
-        uint256 liquidityRate,
-        uint256 stableBorrowRate,
-        uint256 variableBorrowRate,
-        uint256 liquidityIndex,
-        uint256 variableBorrowIndex
-    );
-
-    event ReserveStableRateBorrowing(
-        address indexed asset,
-        bool enabled
-    );
-
-    event ReserveDropped(
-        address indexed asset
-    );
-
-    event ReserveFactorChanged(
-        address indexed asset,
-        uint256 oldReserveFactor,
-        uint256 newReserveFactor
-    );
-
-    event ReserveInterestRateStrategyChanged(
-        address indexed asset,
-        address oldStrategy,
-        address newStrategy
-    );
-
-    event CollateralConfigurationChanged(
-        address indexed asset,
-        uint256 ltv,
-        uint256 liquidationThreshold,
-        uint256 liquidationBonus
-    );
-
-    event ReserveFrozen(
-        address indexed asset
-    );
-
-    event ReserveUnfrozen(
-        address indexed asset
-    );
-
-    event ReservePaused(
-        address indexed asset,
-        bool paused
-    );
-
-    event ReserveBorrowing(
-        address indexed asset,
-        bool enabled
-    );
-
-    event ReserveActive(
-        address indexed asset
-    );
-
-    event MarketIdSet(
-        string indexed oldMarketId,
-        string indexed newMarketId
-    );
-
-    event BorrowCapChanged(
-        address indexed asset,
-        uint256 oldBorrowCap,
-        uint256 newBorrowCap
-    );
-
-    event SupplyCapChanged(
-        address indexed asset,
-        uint256 oldSupplyCap,
-        uint256 newSupplyCap
-    );
-
-    event LiquidationProtocolFeeChanged(
-        address indexed asset,
-        uint256 oldFee,
-        uint256 newFee
-    );
-
-    event DebtCeilingChanged(
-        address indexed asset,
-        uint256 oldDebtCeiling,
-        uint256 newDebtCeiling
-    );
-}
 
 #[derive(Clone)]
 pub struct BackfillConfig {

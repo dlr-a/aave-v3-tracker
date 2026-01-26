@@ -1,3 +1,4 @@
+mod abi;
 mod db;
 mod errors;
 mod indexer;

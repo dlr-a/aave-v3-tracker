@@ -1,9 +1,10 @@
+use crate::abi::{IERC20, IPool, IProtocolDataProvider};
 use crate::db::connection::DbPool;
 use crate::db::models::{NewReserve, NewReserveState};
 use crate::db::repositories::{reserve_state_repository, reserves_repository};
 use alloy::primitives::{Address, U256, Uint, address};
 use alloy::providers::Provider;
-use alloy::{providers::ProviderBuilder, sol};
+use alloy::providers::ProviderBuilder;
 use backoff::ExponentialBackoff;
 use backoff::future::retry;
 use bigdecimal::BigDecimal;
@@ -34,51 +35,6 @@ fn create_rpc_backoff() -> ExponentialBackoff {
         multiplier: 2.0,
         randomization_factor: 0.5,
         ..Default::default()
-    }
-}
-
-sol! {
-    #[sol(rpc)]
-    interface IProtocolDataProvider {
-        #[derive(Debug)]
-        struct TokenData { string symbol; address tokenAddress; }
-        function getAllReservesTokens() external view returns (TokenData[] memory);
-        function getReserveTokensAddresses(address asset) external view override returns (address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress);
-        function getReserveConfigurationData(address asset) external view override returns (uint256 decimals, uint256 ltv, uint256 liquidationThreshold, uint256 liquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool stableBorrowRateEnabled, bool isActive, bool isFrozen);
-        function getReserveCaps(address asset) external view override returns (uint256 borrowCap, uint256 supplyCap);
-    }
-
-    #[sol(rpc)]
-    interface IERC20 {
-        function symbol() external view returns (string);
-        function totalSupply() external view returns (uint256);
-    }
-
-    #[sol(rpc)]
-    interface IPool {
-        struct ReserveConfigurationMap {
-            uint256 data;
-        }
-
-        struct ReserveData {
-            ReserveConfigurationMap configuration;
-            uint128 liquidityIndex;
-            uint128 currentLiquidityRate;
-            uint128 variableBorrowIndex;
-            uint128 currentVariableBorrowRate;
-            uint128 currentStableBorrowRate;
-            uint40 lastUpdateTimestamp;
-            uint16 id;
-            address aTokenAddress;
-            address stableDebtTokenAddress;
-            address variableDebtTokenAddress;
-            address interestRateStrategyAddress;
-            uint128 accruedToTreasury;
-            uint128 unbacked;
-            uint128 isolationModeTotalDebt;
-        }
-
-        function getReserveData(address asset) external view returns (ReserveData memory);
     }
 }
 

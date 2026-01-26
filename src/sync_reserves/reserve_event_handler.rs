@@ -1,3 +1,9 @@
+use crate::abi::{
+    BorrowCapChanged, CollateralConfigurationChanged, IProtocolDataProvider, ReserveActive,
+    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFrozen,
+    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
+    ReserveStableRateBorrowing, ReserveUnfrozen, SupplyCapChanged,
+};
 use crate::db::connection::DbPool;
 use crate::db::repositories::{
     processed_events_repository, reserve_state_repository, reserves_repository,
@@ -9,7 +15,6 @@ use alloy::{
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::eth::Filter,
     rpc::types::eth::Log,
-    sol,
     sol_types::SolEvent,
 };
 use backoff::{ExponentialBackoff, future::retry};
@@ -120,114 +125,6 @@ fn to_bigdecimal<const BITS: usize, const LIMBS: usize>(
     val: Uint<BITS, LIMBS>,
 ) -> Result<BigDecimal> {
     BigDecimal::from_str(&val.to_string()).map_err(|e| eyre!("BigDecimal conversion error: {}", e))
-}
-
-sol! {
-    event ReserveInitialized(
-        address indexed asset,
-        address indexed aToken,
-        address stableDebtToken,
-        address variableDebtToken,
-        address interestRateStrategyAddress
-    );
-
-    event ReserveDataUpdated(
-        address indexed reserve,
-        uint256 liquidityRate,
-        uint256 stableBorrowRate,
-        uint256 variableBorrowRate,
-        uint256 liquidityIndex,
-        uint256 variableBorrowIndex
-    );
-
-    event ReserveStableRateBorrowing(
-        address indexed asset,
-        bool enabled
-    );
-
-    event ReserveDropped(
-        address indexed asset
-    );
-
-    event ReserveFactorChanged(
-        address indexed asset,
-        uint256 oldReserveFactor,
-        uint256 newReserveFactor
-    );
-
-    event ReserveInterestRateStrategyChanged(
-        address indexed asset,
-        address oldStrategy,
-        address newStrategy
-    );
-
-    event CollateralConfigurationChanged(
-        address indexed asset,
-        uint256 ltv,
-        uint256 liquidationThreshold,
-        uint256 liquidationBonus
-    );
-
-    event ReserveFrozen(
-        address indexed asset
-    );
-
-    event ReserveUnfrozen(
-        address indexed asset
-    );
-
-    event ReservePaused(
-        address indexed asset,
-        bool paused
-    );
-
-    event ReserveBorrowing(
-        address indexed asset,
-        bool enabled
-    );
-
-    event ReserveActive(
-        address indexed asset
-    );
-
-    event MarketIdSet(
-        string indexed oldMarketId,
-        string indexed newMarketId
-    );
-
-    event BorrowCapChanged(
-        address indexed asset,
-        uint256 oldBorrowCap,
-        uint256 newBorrowCap
-    );
-
-    event SupplyCapChanged(
-        address indexed asset,
-        uint256 oldSupplyCap,
-        uint256 newSupplyCap
-    );
-
-    event LiquidationProtocolFeeChanged(
-        address indexed asset,
-        uint256 oldFee,
-        uint256 newFee
-    );
-
-    event DebtCeilingChanged(
-        address indexed asset,
-        uint256 oldDebtCeiling,
-        uint256 newDebtCeiling
-    );
-
-    #[sol(rpc)]
-    interface IProtocolDataProvider {
-        #[derive(Debug)]
-        struct TokenData { string symbol; address tokenAddress; }
-        function getAllReservesTokens() external view returns (TokenData[] memory);
-        function getReserveTokensAddresses(address asset) external view override returns (address aTokenAddress, address stableDebtTokenAddress, address variableDebtTokenAddress);
-        function getReserveConfigurationData(address asset) external view override returns (uint256 decimals, uint256 ltv, uint256 liquidationThreshold, uint256 liquidationBonus, uint256 reserveFactor, bool usageAsCollateralEnabled, bool borrowingEnabled, bool stableBorrowRateEnabled, bool isActive, bool isFrozen);
-    }
-
 }
 
 pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()> {
