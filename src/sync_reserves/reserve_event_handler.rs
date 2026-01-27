@@ -19,6 +19,7 @@ use alloy::{
 };
 use backoff::{ExponentialBackoff, future::retry};
 use bigdecimal::BigDecimal;
+use diesel_async::AsyncPgConnection;
 use eyre::eyre;
 use eyre::{Context, Result};
 use futures_util::StreamExt;
@@ -162,7 +163,8 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
     info!("Reserve Handler Started...");
 
     while let Some(log) = stream.next().await {
-        if let Err(e) = process_reserve_event(pool, provider.clone(), &log).await {
+        let mut conn = pool.get().await?;
+        if let Err(e) = process_reserve_event(&mut conn, pool, provider.clone(), &log).await {
             error!(error = ?e, "Failed to process reserve event, continuing...");
         }
     }
@@ -171,6 +173,7 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
 }
 
 pub async fn process_reserve_event(
+    conn: &mut AsyncPgConnection,
     pool: &DbPool,
     provider: impl Provider + Clone + 'static,
     log: &Log,
@@ -184,13 +187,9 @@ pub async fn process_reserve_event(
         None => return Ok(()),
     };
 
-    let mut conn = pool.get().await?;
-
     let inserted =
-        processed_events_repository::try_insert_event(&mut conn, tx_hash, log_index, block_number)
+        processed_events_repository::try_insert_event(conn, tx_hash, log_index, block_number)
             .await?;
-
-    drop(conn);
 
     if !inserted {
         return Ok(());
@@ -213,7 +212,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveData(e) => {
             let asset = e.reserve.to_string();
             reserve_state_repository::update_financials(
-                pool,
+                conn,
                 asset.clone(),
                 to_bigdecimal(e.liquidityIndex)?,
                 to_bigdecimal(e.variableBorrowIndex)?,
@@ -249,7 +248,7 @@ pub async fn process_reserve_event(
         ProcessedLog::CollateralConfig(e) => {
             let asset = e.asset.to_string();
             reserves_repository::update_risk_config(
-                pool,
+                conn,
                 asset.clone(),
                 e.ltv.to::<u64>() as i64,
                 e.liquidationThreshold.to::<u64>() as i64,
@@ -264,7 +263,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveFrozen(e) => {
             let asset = e.asset.to_string();
             reserves_repository::set_frozen_status(
-                pool,
+                conn,
                 asset.clone(),
                 true,
                 block_number,
@@ -278,7 +277,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveUnfrozen(e) => {
             let asset = e.asset.to_string();
             reserves_repository::set_frozen_status(
-                pool,
+                conn,
                 asset.clone(),
                 false,
                 block_number,
@@ -292,7 +291,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReservePaused(e) => {
             let asset = e.asset.to_string();
             reserves_repository::set_paused_status(
-                pool,
+                conn,
                 asset.clone(),
                 true,
                 block_number,
@@ -306,7 +305,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveBorrowing(e) => {
             let asset = e.asset.to_string();
             reserves_repository::set_borrowing_status(
-                pool,
+                conn,
                 asset.clone(),
                 e.enabled,
                 block_number,
@@ -319,7 +318,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveActive(e) => {
             let asset = e.asset.to_string();
             reserves_repository::set_active_status(
-                pool,
+                conn,
                 asset.clone(),
                 true,
                 block_number,
@@ -331,7 +330,7 @@ pub async fn process_reserve_event(
 
         ProcessedLog::ReserveDropped(e) => {
             let asset = e.asset.to_string();
-            reserves_repository::set_dropped_status(pool, asset.clone(), block_number, log_index)
+            reserves_repository::set_dropped_status(conn, asset.clone(), block_number, log_index)
                 .await
                 .wrap_err_with(|| format!("Failed to mark {} as dropped", asset))?;
             info!("Dropped: {}", asset);
@@ -341,7 +340,7 @@ pub async fn process_reserve_event(
             let asset = e.asset.to_string();
             let new_strategy = e.newStrategy.to_string();
             reserves_repository::update_strategy_address(
-                pool,
+                conn,
                 asset.clone(),
                 new_strategy,
                 block_number,
@@ -373,7 +372,7 @@ pub async fn process_reserve_event(
             let stable_borrow_addr = token_addresses.stableDebtTokenAddress;
 
             reserves_repository::update_stable_borrow_address(
-                pool,
+                conn,
                 asset.to_string(),
                 stable_borrow_addr.to_string(),
                 block_number,
@@ -386,7 +385,7 @@ pub async fn process_reserve_event(
         ProcessedLog::SupplyCapChanged(e) => {
             let asset = e.asset.to_string();
             reserves_repository::update_supply_cap(
-                pool,
+                conn,
                 asset.clone(),
                 to_bigdecimal(e.newSupplyCap)?,
                 block_number,
@@ -399,7 +398,7 @@ pub async fn process_reserve_event(
         ProcessedLog::BorrowCapChanged(e) => {
             let asset = e.asset.to_string();
             reserves_repository::update_borrow_cap(
-                pool,
+                conn,
                 asset.clone(),
                 to_bigdecimal(e.newBorrowCap)?,
                 block_number,
@@ -412,7 +411,7 @@ pub async fn process_reserve_event(
         ProcessedLog::ReserveFactorChanged(e) => {
             let asset = e.asset.to_string();
             reserves_repository::update_reserve_factor(
-                pool,
+                conn,
                 asset.clone(),
                 e.newReserveFactor.to::<u64>() as i64,
                 block_number,

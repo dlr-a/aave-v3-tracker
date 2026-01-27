@@ -5,6 +5,7 @@ use crate::errors::TrackerError;
 use bigdecimal::BigDecimal;
 use diesel::pg::upsert::excluded;
 use diesel::prelude::*;
+use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use eyre::Result;
 
@@ -42,14 +43,12 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
 }
 
 pub async fn update_reserve_factor(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     rsrv_factor: i64,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -62,21 +61,19 @@ pub async fn update_reserve_factor(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn update_supply_cap(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     sply_cap: BigDecimal,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -89,21 +86,19 @@ pub async fn update_supply_cap(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn update_borrow_cap(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     brw_cap: BigDecimal,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -116,21 +111,19 @@ pub async fn update_borrow_cap(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn update_stable_borrow_address(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     stable_borrow_address: String,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -143,14 +136,14 @@ pub async fn update_stable_borrow_address(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn update_risk_config(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     ltv_val: i64,
     threshold_val: i64,
@@ -158,8 +151,6 @@ pub async fn update_risk_config(
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -174,21 +165,19 @@ pub async fn update_risk_config(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn set_frozen_status(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     status: bool,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -201,21 +190,19 @@ pub async fn set_frozen_status(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn set_paused_status(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     status: bool,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -228,21 +215,19 @@ pub async fn set_paused_status(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn set_borrowing_status(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     status: bool,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -255,21 +240,19 @@ pub async fn set_borrowing_status(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn set_active_status(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     status: bool,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -282,20 +265,18 @@ pub async fn set_active_status(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn set_dropped_status(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -309,21 +290,19 @@ pub async fn set_dropped_status(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)
 }
 
 pub async fn update_strategy_address(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     new_strategy: String,
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserves.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -336,7 +315,7 @@ pub async fn update_strategy_address(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
 
     Ok(result)

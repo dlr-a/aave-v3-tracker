@@ -4,6 +4,7 @@ use crate::db::schema::reserve_state::dsl::*;
 use bigdecimal::BigDecimal;
 use diesel::prelude::*;
 use diesel::upsert::excluded;
+use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use eyre::Result;
 
@@ -34,7 +35,7 @@ pub async fn sync_state(pool: &DbPool, new_state: NewReserveState) -> Result<()>
 }
 
 pub async fn update_financials(
-    pool: &DbPool,
+    conn: &mut AsyncPgConnection,
     asset: String,
     liq_index_val: BigDecimal,
     var_borrow_index_val: BigDecimal,
@@ -44,8 +45,6 @@ pub async fn update_financials(
     block_number: i64,
     log_index: i64,
 ) -> Result<usize> {
-    let mut conn = pool.get().await?;
-
     let result = diesel::update(
         reserve_state.filter(asset_address.eq(asset)).filter(
             last_updated_block.lt(block_number).or(last_updated_block
@@ -62,7 +61,7 @@ pub async fn update_financials(
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))
-    .execute(&mut conn)
+    .execute(conn)
     .await?;
     Ok(result)
 }

@@ -12,6 +12,7 @@ use alloy::{providers::Provider, rpc::types::eth::Filter};
 use alloy_primitives::address;
 use alloy_sol_types::SolEvent;
 use backoff::{ExponentialBackoff, future::retry};
+use diesel_async::AsyncConnection;
 use eyre::{Context, Result};
 use std::time::{Duration, Instant};
 
@@ -66,7 +67,7 @@ pub async fn backfill(
         SupplyCapChanged::SIGNATURE_HASH,
     ];
 
-    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?; //todo: hata uste mi firlatilir
+    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
     let start_block = match sync_status_repository::get_last_block(&mut conn).await {
         Ok(last) if last >= from_block => {
             tracing::info!(checkpoint = last, "Resuming from checkpoint");
@@ -192,30 +193,37 @@ async fn process_chunk_once(
 
     let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
 
-    if log_count == 0 {
-        sync_status_repository::update_last_block(&mut conn, to_block).await?; //todo
-        return Ok(0);
-    }
+    conn.transaction::<_, eyre::Report, _>(|conn| {
+        let provider = provider.clone();
+        let logs = logs.clone();
 
-    let mut logs = logs;
-    logs.sort_by_key(|l| (l.block_number, l.log_index));
+        Box::pin(async move {
+            if log_count == 0 {
+                sync_status_repository::update_last_block(conn, to_block).await?;
+                return Ok(0);
+            }
 
-    //todo
-    for log in &logs {
-        handle_log_logic(pool, provider.clone(), log)
-            .await
-            .wrap_err_with(|| {
-                format!(
-                    "Failed to handle log at block {} index {}",
-                    log.block_number.unwrap_or_default(),
-                    log.log_index.unwrap_or_default()
-                )
-            })?;
-    }
+            let mut logs = logs;
+            logs.sort_by_key(|l| (l.block_number, l.log_index));
 
-    sync_status_repository::update_last_block(&mut conn, to_block).await?;
+            for log in &logs {
+                handle_log_logic(conn, pool, provider.clone(), log)
+                    .await
+                    .wrap_err_with(|| {
+                        format!(
+                            "Failed to handle log at block {} index {}",
+                            log.block_number.unwrap_or_default(),
+                            log.log_index.unwrap_or_default()
+                        )
+                    })?;
+            }
 
-    Ok(log_count)
+            sync_status_repository::update_last_block(conn, to_block).await?;
+
+            Ok(log_count)
+        })
+    })
+    .await
 }
 
 fn is_retryable_error(error: &eyre::Report) -> bool {
