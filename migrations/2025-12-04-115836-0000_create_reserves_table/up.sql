@@ -17,6 +17,15 @@ CREATE TABLE reserves (
     borrow_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
     reserve_factor BIGINT NOT NULL DEFAULT 0,
     
+    is_collateral_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    is_stable_borrow_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    is_flash_loan_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    emode_category_id INTEGER NOT NULL DEFAULT 0,
+    debt_ceiling NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    liquidation_protocol_fee BIGINT NOT NULL DEFAULT 0,
+    is_siloed_borrowing BOOLEAN NOT NULL DEFAULT FALSE,
+    unbacked_mint_cap NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    
     atoken_address CHAR(42) NOT NULL,
     v_debt_token_address CHAR(42) NOT NULL,
     s_debt_token_address CHAR(42) NOT NULL,

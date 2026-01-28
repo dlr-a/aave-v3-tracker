@@ -35,6 +35,14 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
             v_debt_token_address.eq(excluded(v_debt_token_address)),
             s_debt_token_address.eq(excluded(s_debt_token_address)),
             interest_rate_strategy_address.eq(excluded(interest_rate_strategy_address)),
+            is_collateral_enabled.eq(excluded(is_collateral_enabled)),
+            is_stable_borrow_enabled.eq(excluded(is_stable_borrow_enabled)),
+            is_flash_loan_enabled.eq(excluded(is_flash_loan_enabled)),
+            emode_category_id.eq(excluded(emode_category_id)),
+            debt_ceiling.eq(excluded(debt_ceiling)),
+            liquidation_protocol_fee.eq(excluded(liquidation_protocol_fee)),
+            is_siloed_borrowing.eq(excluded(is_siloed_borrowing)),
+            unbacked_mint_cap.eq(excluded(unbacked_mint_cap)),
         ))
         .execute(&mut conn)
         .await?;
@@ -312,6 +320,181 @@ pub async fn update_strategy_address(
     )
     .set((
         interest_rate_strategy_address.eq(new_strategy),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn set_flash_loan_status(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    status: bool,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        is_flash_loan_enabled.eq(status),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn update_emode_category(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    category_id: i32,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        emode_category_id.eq(category_id),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn update_debt_ceiling(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    ceiling: BigDecimal,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        debt_ceiling.eq(ceiling),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn update_liquidation_protocol_fee(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    fee: i64,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        liquidation_protocol_fee.eq(fee),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn set_siloed_borrowing_status(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    status: bool,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        is_siloed_borrowing.eq(status),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn update_unbacked_mint_cap(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    cap: BigDecimal,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        unbacked_mint_cap.eq(cap),
+        last_updated_block.eq(block_number),
+        last_updated_log_index.eq(log_index),
+    ))
+    .execute(conn)
+    .await?;
+
+    Ok(result)
+}
+
+pub async fn set_stable_borrow_status(
+    conn: &mut AsyncPgConnection,
+    asset: String,
+    status: bool,
+    block_number: i64,
+    log_index: i64,
+) -> Result<usize> {
+    let result = diesel::update(
+        reserves.filter(asset_address.eq(asset)).filter(
+            last_updated_block.lt(block_number).or(last_updated_block
+                .eq(block_number)
+                .and(last_updated_log_index.lt(log_index))),
+        ),
+    )
+    .set((
+        is_stable_borrow_enabled.eq(status),
         last_updated_block.eq(block_number),
         last_updated_log_index.eq(log_index),
     ))

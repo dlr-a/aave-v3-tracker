@@ -1,8 +1,10 @@
 use crate::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, ReserveActive, ReserveBorrowing,
-    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFrozen, ReserveInitialized,
-    ReserveInterestRateStrategyChanged, ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen,
-    SupplyCapChanged, Transfer,
+    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
+    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
+    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
+    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
+    ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
+    UnbackedMintCapChanged,
 };
 use crate::db::connection::DbPool;
 use crate::db::repositories::sync_status_repository;
@@ -50,7 +52,7 @@ pub async fn backfill(
     ];
 
     let events = vec![
-        Transfer::SIGNATURE_HASH,
+        // Transfer::SIGNATURE_HASH,
         ReserveInitialized::SIGNATURE_HASH,
         ReserveDataUpdated::SIGNATURE_HASH,
         ReserveStableRateBorrowing::SIGNATURE_HASH,
@@ -65,6 +67,12 @@ pub async fn backfill(
         ReserveActive::SIGNATURE_HASH,
         BorrowCapChanged::SIGNATURE_HASH,
         SupplyCapChanged::SIGNATURE_HASH,
+        ReserveFlashLoaning::SIGNATURE_HASH,
+        EModeAssetCategoryChanged::SIGNATURE_HASH,
+        DebtCeilingChanged::SIGNATURE_HASH,
+        LiquidationProtocolFeeChanged::SIGNATURE_HASH,
+        SiloedBorrowingChanged::SIGNATURE_HASH,
+        UnbackedMintCapChanged::SIGNATURE_HASH,
     ];
 
     let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;

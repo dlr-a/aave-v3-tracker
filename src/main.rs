@@ -11,7 +11,7 @@ use alloy_provider::Provider;
 use alloy_provider::ProviderBuilder;
 use dotenvy::dotenv;
 use std::env;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,9 +44,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ws_pool = pool.clone();
     let ws_url = ws_rpc_url.clone();
     tokio::spawn(async move {
-        info!("Starting WS event handler...");
-        if let Err(e) = reserve_event_handler(&ws_pool, ws_url).await {
-            error!("WS handler error: {:?}", e);
+        loop {
+            info!("Starting WS event handler...");
+            match reserve_event_handler(&ws_pool, ws_url.clone()).await {
+                Ok(_) => {
+                    warn!("WS handler exited normally, reconnecting...");
+                }
+                Err(e) => {
+                    error!("WS handler error: {:?}, reconnecting in 5s...", e);
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
         }
     });
 

@@ -79,4 +79,27 @@ sol! {
         uint256 oldDebtCeiling,
         uint256 newDebtCeiling
     );
+
+    event ReserveFlashLoaning(
+        address indexed asset,
+        bool enabled
+    );
+
+    event EModeAssetCategoryChanged(
+        address indexed asset,
+        uint8 oldCategoryId,
+        uint8 newCategoryId
+    );
+
+    event SiloedBorrowingChanged(
+        address indexed asset,
+        bool oldState,
+        bool newState
+    );
+
+    event UnbackedMintCapChanged(
+        address indexed asset,
+        uint256 oldUnbackedMintCap,
+        uint256 newUnbackedMintCap
+    );
 }

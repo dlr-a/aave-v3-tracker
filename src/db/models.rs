@@ -26,10 +26,20 @@ pub struct Reserve {
     pub borrow_cap: BigDecimal,
     pub reserve_factor: i64,
 
+    pub is_collateral_enabled: bool,
+    pub is_stable_borrow_enabled: bool,
+    pub is_flash_loan_enabled: bool,
+    pub emode_category_id: i32,
+    pub debt_ceiling: BigDecimal,
+    pub liquidation_protocol_fee: i64,
+    pub is_siloed_borrowing: bool,
+    pub unbacked_mint_cap: BigDecimal,
+
     pub atoken_address: String,
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
     pub interest_rate_strategy_address: String,
+
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
 }
@@ -55,10 +65,20 @@ pub struct NewReserve {
     pub borrow_cap: BigDecimal,
     pub reserve_factor: i64,
 
+    pub is_collateral_enabled: bool,
+    pub is_stable_borrow_enabled: bool,
+    pub is_flash_loan_enabled: bool,
+    pub emode_category_id: i32,
+    pub debt_ceiling: BigDecimal,
+    pub liquidation_protocol_fee: i64,
+    pub is_siloed_borrowing: bool,
+    pub unbacked_mint_cap: BigDecimal,
+
     pub atoken_address: String,
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
     pub interest_rate_strategy_address: String,
+
     pub last_updated_block: i64,
 }
 

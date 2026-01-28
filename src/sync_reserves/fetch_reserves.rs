@@ -139,6 +139,96 @@ where
     .await
     .wrap_err_with(|| format!("Failed to fetch reserve config for {}", asset_address))?;
 
+    let flash_loan_enabled = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getFlashLoanEnabled(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch flash loan status for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .unwrap_or(true);
+
+    let debt_ceiling = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getDebtCeiling(asset_address).call().await.map_err(|e| {
+                warn!("Failed to fetch debt ceiling for {}: {}", asset_address, e);
+                backoff::Error::transient(e)
+            })
+        }
+    })
+    .await
+    .unwrap_or(U256::ZERO);
+
+    let liquidation_protocol_fee = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getLiquidationProtocolFee(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch liquidation protocol fee for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .unwrap_or(U256::ZERO);
+
+    let siloed_borrowing = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getSiloedBorrowing(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch siloed borrowing for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .unwrap_or(false);
+
+    let unbacked_mint_cap = retry(rpc_backoff.clone(), || {
+        let dp = data_provider.clone();
+        async move {
+            dp.getUnbackedMintCap(asset_address)
+                .call()
+                .await
+                .map_err(|e| {
+                    warn!(
+                        "Failed to fetch unbacked mint cap for {}: {}",
+                        asset_address, e
+                    );
+                    backoff::Error::transient(e)
+                })
+        }
+    })
+    .await
+    .unwrap_or(U256::ZERO);
+
+    let emode_category = data_provider
+        .getReserveEModeCategory(asset_address)
+        .call()
+        .await
+        .unwrap_or(U256::ZERO);
+
     let pool_data = retry(rpc_backoff.clone(), || {
         let pc = pool_contract.clone();
         async move {
@@ -234,11 +324,19 @@ where
         is_active: reserve_config.isActive,
         is_frozen: reserve_config.isFrozen,
         is_paused,
+        is_borrowing_enabled: reserve_config.borrowingEnabled,
+        is_dropped: false,
         supply_cap: to_bigdecimal(caps.supplyCap)?,
         borrow_cap: to_bigdecimal(caps.borrowCap)?,
         reserve_factor: to_i64(reserve_config.reserveFactor, "reserve_factor")?,
-        is_borrowing_enabled: reserve_config.borrowingEnabled,
-        is_dropped: false,
+        is_collateral_enabled: reserve_config.usageAsCollateralEnabled,
+        is_stable_borrow_enabled: reserve_config.stableBorrowRateEnabled,
+        is_flash_loan_enabled: flash_loan_enabled,
+        emode_category_id: emode_category.to::<u32>() as i32,
+        debt_ceiling: to_bigdecimal(debt_ceiling)?,
+        liquidation_protocol_fee: liquidation_protocol_fee.to::<u64>() as i64,
+        is_siloed_borrowing: siloed_borrowing,
+        unbacked_mint_cap: to_bigdecimal(unbacked_mint_cap)?,
         atoken_address: token_addresses.aTokenAddress.to_string(),
         v_debt_token_address: token_addresses.variableDebtTokenAddress.to_string(),
         s_debt_token_address: token_addresses.stableDebtTokenAddress.to_string(),

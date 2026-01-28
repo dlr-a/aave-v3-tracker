@@ -49,6 +49,14 @@ diesel::table! {
         supply_cap -> Numeric,
         borrow_cap -> Numeric,
         reserve_factor -> Int8,
+        is_collateral_enabled -> Bool,
+        is_stable_borrow_enabled -> Bool,
+        is_flash_loan_enabled -> Bool,
+        emode_category_id -> Int4,
+        debt_ceiling -> Numeric,
+        liquidation_protocol_fee -> Int8,
+        is_siloed_borrowing -> Bool,
+        unbacked_mint_cap -> Numeric,
         #[max_length = 42]
         atoken_address -> Bpchar,
         #[max_length = 42]

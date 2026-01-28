@@ -1,8 +1,10 @@
 use crate::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, IProtocolDataProvider, ReserveActive,
-    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFrozen,
-    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
-    ReserveStableRateBorrowing, ReserveUnfrozen, SupplyCapChanged,
+    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
+    EModeAssetCategoryChanged, IProtocolDataProvider, LiquidationProtocolFeeChanged, ReserveActive,
+    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
+    ReserveFlashLoaning, ReserveFrozen, ReserveInitialized, ReserveInterestRateStrategyChanged,
+    ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged,
+    SupplyCapChanged, UnbackedMintCapChanged,
 };
 use crate::db::connection::DbPool;
 use crate::db::repositories::{
@@ -42,6 +44,12 @@ pub enum ProcessedLog {
     SupplyCapChanged(SupplyCapChanged),
     BorrowCapChanged(BorrowCapChanged),
     ReserveFactorChanged(ReserveFactorChanged),
+    ReserveFlashLoaning(ReserveFlashLoaning),
+    EModeAssetCategoryChanged(EModeAssetCategoryChanged),
+    DebtCeilingChanged(DebtCeilingChanged),
+    LiquidationProtocolFeeChanged(LiquidationProtocolFeeChanged),
+    SiloedBorrowingChanged(SiloedBorrowingChanged),
+    UnbackedMintCapChanged(UnbackedMintCapChanged),
 }
 
 pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
@@ -117,6 +125,35 @@ pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
             .log_decode::<ReserveFactorChanged>()
             .ok()
             .map(|e| ProcessedLog::ReserveFactorChanged(e.data().clone())),
+        ReserveFlashLoaning::SIGNATURE_HASH => log
+            .log_decode::<ReserveFlashLoaning>()
+            .ok()
+            .map(|e| ProcessedLog::ReserveFlashLoaning(e.data().clone())),
+
+        EModeAssetCategoryChanged::SIGNATURE_HASH => log
+            .log_decode::<EModeAssetCategoryChanged>()
+            .ok()
+            .map(|e| ProcessedLog::EModeAssetCategoryChanged(e.data().clone())),
+
+        DebtCeilingChanged::SIGNATURE_HASH => log
+            .log_decode::<DebtCeilingChanged>()
+            .ok()
+            .map(|e| ProcessedLog::DebtCeilingChanged(e.data().clone())),
+
+        LiquidationProtocolFeeChanged::SIGNATURE_HASH => log
+            .log_decode::<LiquidationProtocolFeeChanged>()
+            .ok()
+            .map(|e| ProcessedLog::LiquidationProtocolFeeChanged(e.data().clone())),
+
+        SiloedBorrowingChanged::SIGNATURE_HASH => log
+            .log_decode::<SiloedBorrowingChanged>()
+            .ok()
+            .map(|e| ProcessedLog::SiloedBorrowingChanged(e.data().clone())),
+
+        UnbackedMintCapChanged::SIGNATURE_HASH => log
+            .log_decode::<UnbackedMintCapChanged>()
+            .ok()
+            .map(|e| ProcessedLog::UnbackedMintCapChanged(e.data().clone())),
 
         _ => None,
     }
@@ -155,6 +192,12 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
             ReserveActive::SIGNATURE_HASH,
             BorrowCapChanged::SIGNATURE_HASH,
             SupplyCapChanged::SIGNATURE_HASH,
+            ReserveFlashLoaning::SIGNATURE_HASH,
+            EModeAssetCategoryChanged::SIGNATURE_HASH,
+            DebtCeilingChanged::SIGNATURE_HASH,
+            LiquidationProtocolFeeChanged::SIGNATURE_HASH,
+            SiloedBorrowingChanged::SIGNATURE_HASH,
+            UnbackedMintCapChanged::SIGNATURE_HASH,
         ]);
 
     let sub_events = provider.subscribe_logs(&filter).await?;
@@ -349,9 +392,18 @@ pub async fn process_reserve_event(
             .await
             .wrap_err_with(|| format!("Failed to update strategy for {}", asset))?;
         }
-
         ProcessedLog::ReserveStableRateBorrowing(e) => {
             let asset = e.asset;
+
+            reserves_repository::set_stable_borrow_status(
+                conn,
+                asset.to_string(),
+                e.enabled,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update stable borrow status for {}", asset))?;
 
             let token_addresses = retry(rpc_backoff, || {
                 let dp = data_provider.clone();
@@ -380,6 +432,8 @@ pub async fn process_reserve_event(
             )
             .await
             .wrap_err_with(|| format!("Failed to update stable borrow address for {}", asset))?;
+
+            info!("Stable rate borrowing changed for {}: {}", asset, e.enabled);
         }
 
         ProcessedLog::SupplyCapChanged(e) => {
@@ -419,6 +473,93 @@ pub async fn process_reserve_event(
             )
             .await
             .wrap_err_with(|| format!("Failed to update reserve factor for {}", asset))?;
+        }
+
+        ProcessedLog::ReserveFlashLoaning(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::set_flash_loan_status(
+                conn,
+                asset.clone(),
+                e.enabled,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update flash loan status for {}", asset))?;
+            info!("Flash loan status changed for {}: {}", asset, e.enabled);
+        }
+
+        ProcessedLog::EModeAssetCategoryChanged(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::update_emode_category(
+                conn,
+                asset.clone(),
+                e.newCategoryId as i32,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update eMode category for {}", asset))?;
+            info!(
+                "eMode category changed for {}: {} -> {}",
+                asset, e.oldCategoryId, e.newCategoryId
+            );
+        }
+
+        ProcessedLog::DebtCeilingChanged(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::update_debt_ceiling(
+                conn,
+                asset.clone(),
+                to_bigdecimal(e.newDebtCeiling)?,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update debt ceiling for {}", asset))?;
+            info!("Debt ceiling changed for {}", asset);
+        }
+
+        ProcessedLog::LiquidationProtocolFeeChanged(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::update_liquidation_protocol_fee(
+                conn,
+                asset.clone(),
+                e.newFee.to::<u64>() as i64,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update liquidation protocol fee for {}", asset))?;
+            info!("Liquidation protocol fee changed for {}", asset);
+        }
+
+        ProcessedLog::SiloedBorrowingChanged(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::set_siloed_borrowing_status(
+                conn,
+                asset.clone(),
+                e.newState,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update siloed borrowing for {}", asset))?;
+            info!("Siloed borrowing changed for {}: {}", asset, e.newState);
+        }
+
+        ProcessedLog::UnbackedMintCapChanged(e) => {
+            let asset = e.asset.to_string();
+            reserves_repository::update_unbacked_mint_cap(
+                conn,
+                asset.clone(),
+                to_bigdecimal(e.newUnbackedMintCap)?,
+                block_number,
+                log_index,
+            )
+            .await
+            .wrap_err_with(|| format!("Failed to update unbacked mint cap for {}", asset))?;
+            info!("Unbacked mint cap changed for {}", asset);
         }
     }
 
