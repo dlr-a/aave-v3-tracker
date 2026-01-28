@@ -3,15 +3,11 @@ use crate::db::connection::DbPool;
 use crate::db::models::{NewReserve, NewReserveState};
 use crate::db::repositories::{reserve_state_repository, reserves_repository};
 use alloy::primitives::{Address, U256, Uint, address};
-use alloy::providers::Provider;
-use alloy::providers::ProviderBuilder;
-use backoff::ExponentialBackoff;
-use backoff::future::retry;
+use alloy::providers::{Provider, ProviderBuilder};
 use bigdecimal::BigDecimal;
-use eyre::{Context, Result, eyre};
+use eyre::{Result, eyre};
 use std::str::FromStr;
-use std::time::Duration;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 fn to_bigdecimal<const BITS: usize, const LIMBS: usize>(
     val: Uint<BITS, LIMBS>,
@@ -27,17 +23,6 @@ fn to_i64<const BITS: usize, const LIMBS: usize>(
     i64::try_from(as_u64).map_err(|_| eyre!("{} overflow: {} exceeds i64::MAX", field_name, as_u64))
 }
 
-fn create_rpc_backoff() -> ExponentialBackoff {
-    ExponentialBackoff {
-        max_elapsed_time: Some(Duration::from_secs(30)),
-        initial_interval: Duration::from_millis(100),
-        max_interval: Duration::from_secs(5),
-        multiplier: 2.0,
-        randomization_factor: 0.5,
-        ..Default::default()
-    }
-}
-
 pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
     let provider = ProviderBuilder::new().connect_http(rpc_url.parse()?);
 
@@ -46,11 +31,7 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
 
     let protocol_data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
 
-    let tokens = protocol_data_provider
-        .getAllReservesTokens()
-        .call()
-        .await
-        .wrap_err("Failed to fetch all reserve tokens from ProtocolDataProvider")?;
+    let tokens = protocol_data_provider.getAllReservesTokens().call().await?;
 
     for token in tokens {
         match process_reserve(
@@ -89,226 +70,62 @@ where
 {
     let data_provider = IProtocolDataProvider::new(dp_addr, provider.clone());
     let pool_contract = IPool::new(pool_addr, provider.clone());
-    let rpc_backoff = create_rpc_backoff();
-
-    let current_block = retry(rpc_backoff.clone(), || {
-        let p = provider.clone();
-        async move {
-            p.get_block_number().await.map_err(|e| {
-                warn!("Failed to get block number: {}", e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .wrap_err("Failed to fetch current block number")?;
-
-    let token_addresses = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getReserveTokensAddresses(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch token addresses for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .wrap_err_with(|| format!("Failed to fetch token addresses for {}", asset_address))?;
-
-    let reserve_config = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getReserveConfigurationData(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch reserve config for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .wrap_err_with(|| format!("Failed to fetch reserve config for {}", asset_address))?;
-
-    let flash_loan_enabled = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getFlashLoanEnabled(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch flash loan status for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .unwrap_or(true);
-
-    let debt_ceiling = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getDebtCeiling(asset_address).call().await.map_err(|e| {
-                warn!("Failed to fetch debt ceiling for {}: {}", asset_address, e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .unwrap_or(U256::ZERO);
-
-    let liquidation_protocol_fee = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getLiquidationProtocolFee(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch liquidation protocol fee for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .unwrap_or(U256::ZERO);
-
-    let siloed_borrowing = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getSiloedBorrowing(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch siloed borrowing for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .unwrap_or(false);
-
-    let unbacked_mint_cap = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getUnbackedMintCap(asset_address)
-                .call()
-                .await
-                .map_err(|e| {
-                    warn!(
-                        "Failed to fetch unbacked mint cap for {}: {}",
-                        asset_address, e
-                    );
-                    backoff::Error::transient(e)
-                })
-        }
-    })
-    .await
-    .unwrap_or(U256::ZERO);
-
-    let emode_category = data_provider
-        .getReserveEModeCategory(asset_address)
-        .call()
-        .await
-        .unwrap_or(U256::ZERO);
-
-    let pool_data = retry(rpc_backoff.clone(), || {
-        let pc = pool_contract.clone();
-        async move {
-            pc.getReserveData(asset_address).call().await.map_err(|e| {
-                warn!("Failed to fetch pool data for {}: {}", asset_address, e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .wrap_err_with(|| format!("Failed to fetch pool data for {}", asset_address))?;
-
-    let caps = retry(rpc_backoff.clone(), || {
-        let dp = data_provider.clone();
-        async move {
-            dp.getReserveCaps(asset_address).call().await.map_err(|e| {
-                warn!("Failed to fetch reserve caps for {}: {}", asset_address, e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .wrap_err_with(|| format!("Failed to fetch reserve caps for {}", asset_address))?;
-
     let erc20 = IERC20::new(asset_address, provider.clone());
 
-    let symbol = erc20
-        .symbol()
-        .call()
-        .await
-        .map(|s| s)
-        .unwrap_or("UNKNOWN".to_string());
+    let (token_addresses, reserve_config, pool_data, caps, current_block) = provider
+        .multicall()
+        .add(data_provider.getReserveTokensAddresses(asset_address))
+        .add(data_provider.getReserveConfigurationData(asset_address))
+        .add(pool_contract.getReserveData(asset_address))
+        .add(data_provider.getReserveCaps(asset_address))
+        .get_block_number()
+        .aggregate()
+        .await?;
 
-    let config_data: U256 = pool_data.configuration.data;
-    let is_paused = !((config_data >> 60usize).bitand(U256::from(1)).is_zero());
+    let symbol = erc20.symbol().call().await.unwrap_or("UNKNOWN".to_string());
+
+    let optional_result = provider
+        .multicall()
+        .add(data_provider.getFlashLoanEnabled(asset_address))
+        .add(data_provider.getDebtCeiling(asset_address))
+        .add(data_provider.getLiquidationProtocolFee(asset_address))
+        .add(data_provider.getSiloedBorrowing(asset_address))
+        .add(data_provider.getUnbackedMintCap(asset_address))
+        .add(data_provider.getReserveEModeCategory(asset_address))
+        .aggregate()
+        .await;
+
+    let (
+        flash_loan_enabled,
+        debt_ceiling,
+        liquidation_protocol_fee,
+        siloed_borrowing,
+        unbacked_mint_cap,
+        emode_category,
+    ) = match optional_result {
+        Ok(result) => result,
+        Err(_) => (true, U256::ZERO, U256::ZERO, false, U256::ZERO, U256::ZERO),
+    };
 
     let atoken = IERC20::new(token_addresses.aTokenAddress, provider.clone());
-
-    let total_liquidity_raw = retry(rpc_backoff.clone(), || {
-        let at = atoken.clone();
-        async move {
-            at.totalSupply().call().await.map_err(|e| {
-                warn!("Failed to fetch aToken supply: {}", e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .wrap_err("Failed to fetch aToken total supply")?;
-
     let vtoken = IERC20::new(token_addresses.variableDebtTokenAddress, provider.clone());
 
-    let total_variable_raw = retry(rpc_backoff.clone(), || {
-        let vt = vtoken.clone();
-        async move {
-            vt.totalSupply().call().await.map_err(|e| {
-                warn!("Failed to fetch variable debt: {}", e);
-                backoff::Error::transient(e)
-            })
-        }
-    })
-    .await
-    .wrap_err("Failed to fetch variable debt total supply")?;
+    let (total_liquidity_raw, total_variable_raw) = provider
+        .multicall()
+        .add(atoken.totalSupply())
+        .add(vtoken.totalSupply())
+        .aggregate()
+        .await?;
 
     let total_stable_raw = if token_addresses.stableDebtTokenAddress != Address::ZERO {
         let stoken = IERC20::new(token_addresses.stableDebtTokenAddress, provider.clone());
-        retry(rpc_backoff.clone(), || {
-            let st = stoken.clone();
-            async move {
-                st.totalSupply().call().await.map_err(|e| {
-                    warn!("Failed to fetch stable debt for {}: {}", asset_address, e);
-                    backoff::Error::transient(e)
-                })
-            }
-        })
-        .await
-        .wrap_err_with(|| format!("Failed to fetch stable debt for {}", asset_address))?
+        stoken.totalSupply().call().await.unwrap_or(U256::ZERO)
     } else {
         U256::ZERO
     };
+
+    let config_data: U256 = pool_data.configuration.data;
+    let is_paused = !((config_data >> 60usize).bitand(U256::from(1)).is_zero());
 
     let reserve_data = NewReserve {
         asset_address: asset_address.to_string(),
