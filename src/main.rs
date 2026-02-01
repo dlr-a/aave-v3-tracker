@@ -6,12 +6,12 @@ mod sync_reserves;
 use crate::db::repositories::sync_status_repository;
 use crate::indexer::backfill_loop::backfill_loop;
 use crate::sync_reserves::fetch_reserves::fetch_reserves;
-use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
+// use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
 use alloy_provider::Provider;
 use alloy_provider::ProviderBuilder;
 use dotenvy::dotenv;
 use std::env;
-use tracing::{error, info, warn};
+use tracing::{error, info /*warn*/};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenv().ok();
 
-    let ws_rpc_url = env::var("WS_RPC_URL").expect("Couldn't find WS_RPC_URL");
+    // let ws_rpc_url = env::var("WS_RPC_URL").expect("Couldn't find WS_RPC_URL");
     let http_rpc_url = env::var("HTTP_RPC_URL").expect("Couldn't find HTTP_RPC_URL");
     let http_provider = ProviderBuilder::new().connect_http(http_rpc_url.parse()?);
 
@@ -41,22 +41,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("Reserves synced successfully!");
     }
 
-    let ws_pool = pool.clone();
-    let ws_url = ws_rpc_url.clone();
-    tokio::spawn(async move {
-        loop {
-            info!("Starting WS event handler...");
-            match reserve_event_handler(&ws_pool, ws_url.clone()).await {
-                Ok(_) => {
-                    warn!("WS handler exited normally, reconnecting...");
-                }
-                Err(e) => {
-                    error!("WS handler error: {:?}, reconnecting in 5s...", e);
-                }
-            }
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        }
-    });
+    // let ws_pool = pool.clone();
+    // let ws_url = ws_rpc_url.clone();
+    // tokio::spawn(async move {
+    //     loop {
+    //         info!("Starting WS event handler...");
+    //         match reserve_event_handler(&ws_pool, ws_url.clone()).await {
+    //             Ok(_) => {
+    //                 warn!("WS handler exited normally, reconnecting...");
+    //             }
+    //             Err(e) => {
+    //                 error!("WS handler error: {:?}, reconnecting in 5s...", e);
+    //             }
+    //         }
+    //         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    //     }
+    // });
 
     tokio::spawn(async move {
         info!("Starting backfill loop...");

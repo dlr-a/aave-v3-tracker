@@ -165,6 +165,7 @@ fn to_bigdecimal<const BITS: usize, const LIMBS: usize>(
     BigDecimal::from_str(&val.to_string()).map_err(|e| eyre!("BigDecimal conversion error: {}", e))
 }
 
+#[allow(dead_code)]
 pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()> {
     let ws = WsConnect::new(rpc_url);
     let provider = ProviderBuilder::new()
