@@ -6,9 +6,9 @@ use crate::abi::{
     ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
     UnbackedMintCapChanged,
 };
+use crate::backfill::dispatcher::handle_log_logic;
 use crate::db::connection::DbPool;
 use crate::db::repositories::sync_status_repository;
-use crate::indexer::dispatcher::handle_log_logic;
 use alloy::primitives::Address;
 use alloy::{providers::Provider, rpc::types::eth::Filter};
 use alloy_primitives::address;

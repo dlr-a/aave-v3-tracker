@@ -1,10 +1,10 @@
 mod abi;
+mod backfill;
 mod db;
 mod errors;
-mod indexer;
 mod sync_reserves;
+use crate::backfill::poller::backfill_loop;
 use crate::db::repositories::sync_status_repository;
-use crate::indexer::backfill_loop::backfill_loop;
 use crate::sync_reserves::fetch_reserves::fetch_reserves;
 // use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
 use alloy_provider::Provider;

@@ -1,6 +1,6 @@
+use crate::backfill::runner::backfill;
 use crate::db::connection::DbPool;
 use crate::db::repositories::sync_status_repository;
-use crate::indexer::backfill::backfill;
 use alloy::providers::Provider;
 use backoff::{ExponentialBackoff, future::retry};
 use eyre::Result;
