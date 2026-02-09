@@ -337,7 +337,7 @@ pub async fn process_reserve_event(
             reserves_repository::set_paused_status(
                 conn,
                 asset.clone(),
-                true,
+                e.paused,
                 block_number,
                 log_index,
             )
