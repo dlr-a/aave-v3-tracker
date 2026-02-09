@@ -1,5 +1,6 @@
 use crate::backfill::runner::backfill;
 use crate::db::connection::DbPool;
+use crate::db::repositories::processed_events_repository;
 use crate::db::repositories::sync_status_repository;
 use alloy::providers::Provider;
 use backoff::{ExponentialBackoff, future::retry};
@@ -52,6 +53,20 @@ pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'sta
                 tracing::info!("Backfill gap detected: {} → {} (head: {})", last, to, head);
 
                 backfill(pool, provider.clone(), last + 1, to).await?;
+                let cutoff = last.saturating_sub(100);
+                if cutoff > 0 {
+                    if let Ok(mut conn) = pool.get().await {
+                        match processed_events_repository::cleanup_old_events(&mut conn, cutoff).await {
+                            Ok(deleted) if deleted > 0 => {
+                                tracing::debug!(deleted, cutoff_block = cutoff, "Cleaned up old processed events");
+                            }
+                            Err(e) => {
+                                tracing::warn!(error = ?e, "Failed to cleanup old events (non-fatal)");
+                            }
+                            _ => {}
+                        }
+                    }
+                }
             } else {
                 tracing::debug!(
                     "Backfill up to date: last={}, target={}, gap={}",

@@ -1,4 +1,5 @@
 use diesel::ExpressionMethods;
+use diesel::QueryDsl;
 use diesel::result::Error as DieselError;
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
@@ -22,4 +23,15 @@ pub async fn try_insert_event(
         .await?;
 
     Ok(inserted == 1)
+}
+
+pub async fn cleanup_old_events(
+    conn: &mut AsyncPgConnection,
+    before_block: i64,
+) -> Result<usize, DieselError> {
+    use crate::db::schema::processed_events::dsl::*;
+
+    diesel::delete(processed_events.filter(block_number.lt(before_block)))
+        .execute(conn)
+        .await
 }
