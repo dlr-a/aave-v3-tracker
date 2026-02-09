@@ -160,6 +160,7 @@ where
         interest_rate_strategy_address: pool_data.interestRateStrategyAddress.to_string(),
         last_updated_block: i64::try_from(current_block)
             .map_err(|_| eyre!("block number overflow: {}", current_block))?,
+        last_updated_log_index: -1,
     };
 
     let reserve_state = NewReserveState {
@@ -179,6 +180,7 @@ where
         isolation_mode_total_debt: to_bigdecimal(U256::from(pool_data.isolationModeTotalDebt))?,
         last_updated_block: i64::try_from(current_block)
             .map_err(|_| eyre!("block number overflow: {}", current_block))?,
+        last_updated_log_index: -1,
     };
 
     reserves_repository::sync_reserve(pool, reserve_data)

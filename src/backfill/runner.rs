@@ -234,7 +234,7 @@ async fn process_chunk_once(
     .await
 }
 
-fn is_retryable_error(error: &eyre::Report) -> bool {
+pub fn is_retryable_error(error: &eyre::Report) -> bool {
     let error_string = format!("{:?}", error).to_lowercase();
 
     let retryable_patterns = [

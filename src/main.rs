@@ -1,11 +1,7 @@
-mod abi;
-mod backfill;
-mod db;
-mod errors;
-mod sync_reserves;
-use crate::backfill::poller::backfill_loop;
-use crate::db::repositories::sync_status_repository;
-use crate::sync_reserves::fetch_reserves::fetch_reserves;
+use aave_v3_tracker::backfill::poller::backfill_loop;
+use aave_v3_tracker::db;
+use aave_v3_tracker::db::repositories::sync_status_repository;
+use aave_v3_tracker::sync_reserves::fetch_reserves::fetch_reserves;
 // use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
 use alloy_provider::Provider;
 use alloy_provider::ProviderBuilder;

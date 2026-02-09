@@ -12,7 +12,7 @@ pub struct Reserve {
     pub symbol: String,
 
     pub decimals: i64,
-    pub reserve_id: i32,
+    pub reserve_id: Option<i32>,
     pub liquidation_threshold: i64,
     pub liquidation_bonus: i64,
     pub ltv: i64,
@@ -38,7 +38,7 @@ pub struct Reserve {
     pub atoken_address: String,
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
-    pub interest_rate_strategy_address: String,
+    pub interest_rate_strategy_address: Option<String>, // Nullable -> Option
 
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
@@ -80,6 +80,7 @@ pub struct NewReserve {
     pub interest_rate_strategy_address: String,
 
     pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
 }
 
 #[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
@@ -125,6 +126,7 @@ pub struct NewReserveState {
     pub unbacked: BigDecimal,
     pub isolation_mode_total_debt: BigDecimal,
     pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
 }
 
 #[derive(Debug, Insertable)]
