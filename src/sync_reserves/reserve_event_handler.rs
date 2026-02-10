@@ -364,12 +364,12 @@ pub async fn process_reserve_event(
             reserves_repository::set_active_status(
                 conn,
                 asset.clone(),
-                true,
+                e.active,
                 block_number,
                 log_index,
             )
             .await
-            .wrap_err_with(|| format!("Failed to activate {}", asset))?;
+            .wrap_err_with(|| format!("Failed to set active status for {}", asset))?;
         }
 
         ProcessedLog::ReserveDropped(e) => {

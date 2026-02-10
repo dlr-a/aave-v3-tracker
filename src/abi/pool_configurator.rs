@@ -48,8 +48,10 @@ sol! {
     );
 
     event ReserveActive(
-        address indexed asset
+        address indexed asset,
+        bool active
     );
+
 
     event MarketIdSet(
         string indexed oldMarketId,

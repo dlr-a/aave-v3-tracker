@@ -6,13 +6,16 @@ use diesel_async::{AsyncPgConnection, RunQueryDsl};
 
 use aave_v3_tracker::db::models::{NewReserveState, ReserveState};
 use aave_v3_tracker::db::schema::reserve_state;
+use alloy::primitives::Address;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static GLOBAL_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 pub fn unique_asset() -> String {
     let id = GLOBAL_COUNTER.fetch_add(1, Ordering::SeqCst);
-    format!("0x{:040x}", id)
+    let hex = format!("0x{:040x}", id);
+    Address::from_str(&hex).unwrap().to_string()
 }
 
 pub fn unique_tx_hash() -> String {
