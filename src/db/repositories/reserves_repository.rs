@@ -503,3 +503,15 @@ pub async fn set_stable_borrow_status(
 
     Ok(result)
 }
+
+pub async fn reserve_exists(conn: &mut AsyncPgConnection, asset: String) -> Result<bool> {
+    use diesel::dsl::count;
+
+    let result: i64 = reserves
+        .filter(asset_address.eq(asset))
+        .select(count(asset_address))
+        .first(conn)
+        .await?;
+
+    Ok(result > 0)
+}

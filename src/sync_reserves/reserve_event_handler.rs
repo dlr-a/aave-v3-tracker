@@ -19,6 +19,7 @@ use alloy::{
     rpc::types::eth::Log,
     sol_types::SolEvent,
 };
+use alloy_primitives::Address;
 use backoff::{ExponentialBackoff, future::retry};
 use bigdecimal::BigDecimal;
 use diesel_async::AsyncPgConnection;
@@ -50,6 +51,33 @@ pub enum ProcessedLog {
     LiquidationProtocolFeeChanged(LiquidationProtocolFeeChanged),
     SiloedBorrowingChanged(SiloedBorrowingChanged),
     UnbackedMintCapChanged(UnbackedMintCapChanged),
+}
+
+impl ProcessedLog {
+    pub fn asset_address(&self) -> Address {
+        match self {
+            ProcessedLog::ReserveData(e) => e.reserve,
+            ProcessedLog::ReserveInitialized(e) => e.asset,
+            ProcessedLog::CollateralConfig(e) => e.asset,
+            ProcessedLog::ReserveFrozen(e) => e.asset,
+            ProcessedLog::ReserveUnfrozen(e) => e.asset,
+            ProcessedLog::ReservePaused(e) => e.asset,
+            ProcessedLog::ReserveBorrowing(e) => e.asset,
+            ProcessedLog::ReserveActive(e) => e.asset,
+            ProcessedLog::ReserveDropped(e) => e.asset,
+            ProcessedLog::InterestRateStrategy(e) => e.asset,
+            ProcessedLog::ReserveStableRateBorrowing(e) => e.asset,
+            ProcessedLog::SupplyCapChanged(e) => e.asset,
+            ProcessedLog::BorrowCapChanged(e) => e.asset,
+            ProcessedLog::ReserveFactorChanged(e) => e.asset,
+            ProcessedLog::ReserveFlashLoaning(e) => e.asset,
+            ProcessedLog::EModeAssetCategoryChanged(e) => e.asset,
+            ProcessedLog::DebtCeilingChanged(e) => e.asset,
+            ProcessedLog::LiquidationProtocolFeeChanged(e) => e.asset,
+            ProcessedLog::SiloedBorrowingChanged(e) => e.asset,
+            ProcessedLog::UnbackedMintCapChanged(e) => e.asset,
+        }
+    }
 }
 
 pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
@@ -222,6 +250,10 @@ pub async fn process_reserve_event(
     provider: impl Provider + Clone + 'static,
     log: &Log,
 ) -> Result<()> {
+    let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
+    let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+    let data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
+
     let block_number = log.block_number.unwrap_or(0) as i64;
     let log_index = log.log_index.unwrap_or(0) as i64;
     let tx_hash = log.transaction_hash.unwrap().to_string();
@@ -239,10 +271,31 @@ pub async fn process_reserve_event(
         return Ok(());
     }
 
-    let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
-    let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+    if !matches!(log_data, ProcessedLog::ReserveInitialized(_)) {
+        let asset_addr = log_data.asset_address();
+        let asset_str = asset_addr.to_string();
 
-    let data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
+        let exists = reserves_repository::reserve_exists(conn, asset_str.clone())
+            .await
+            .wrap_err_with(|| format!("Failed to check reserve existence for {}", asset_str))?;
+
+        if !exists {
+            warn!(
+                asset = %asset_str,
+                block = block_number,
+                "Reserve not found in DB — fetching from RPC"
+            );
+
+            process_reserve(pool, &provider, asset_addr, data_provider_addr, pool_addr)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "Self-healing: failed to fetch reserve {} from RPC",
+                        asset_str
+                    )
+                })?;
+        }
+    }
 
     let rpc_backoff = ExponentialBackoff {
         max_elapsed_time: Some(Duration::from_secs(30)),

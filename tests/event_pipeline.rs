@@ -1,6 +1,8 @@
 mod common;
 
 use aave_v3_tracker::backfill::dispatcher::handle_log_logic;
+use aave_v3_tracker::backfill::runner::is_retryable_error;
+use aave_v3_tracker::db::repositories::reserves_repository;
 use alloy::primitives::{Address, B256};
 use bigdecimal::BigDecimal;
 use common::db::TestDb;
@@ -611,6 +613,44 @@ async fn test_pipeline_reserve_data_updated_updates_state() {
     assert_eq!(state.last_updated_block, 100);
 }
 
+#[tokio::test]
+async fn test_for_missing_reserve_triggers_self_healing() {
+    let db = TestDb::new().await;
+    let mut conn = db.conn().await;
+    let phantom_asset = addr_from_hex(&common::fixtures::unique_asset());
+    let asset_str = phantom_asset.to_string();
+
+    let exists_before = reserves_repository::reserve_exists(&mut conn, asset_str.clone())
+        .await
+        .unwrap();
+    assert!(!exists_before, "precondition: reserve should not exist");
+
+    let tx = unique_tx_hash();
+    let log = LogBuilder::new()
+        .at_block(100)
+        .log_index(0)
+        .tx_hash(B256::from_str(&tx).unwrap())
+        .reserve_frozen(phantom_asset);
+
+    let result = handle_log_logic(&mut conn, &db.pool(), dummy_provider(), &log).await;
+
+    let err = result.expect_err("should fail when reserve is missing and RPC is unreachable");
+    let err_msg = format!("{:#}", err);
+    assert!(
+        err_msg.contains("Self-healing"),
+        "error should originate from self-healing path, got: {}",
+        err_msg
+    );
+
+    let exists_after = reserves_repository::reserve_exists(&mut conn, asset_str)
+        .await
+        .unwrap();
+    assert!(
+        !exists_after,
+        "reserve should still be missing after failed self-healing"
+    );
+}
+
 // DEDUP + ORDERING (end-to-end)
 #[tokio::test]
 async fn test_pipeline_duplicate_event_is_idempotent() {
@@ -915,4 +955,23 @@ async fn test_pipeline_multi_event_scenario() {
     assert_eq!(state.current_liquidity_rate, BigDecimal::from(9000));
     assert_eq!(state.liquidity_index, BigDecimal::from(1_200_000));
     assert_eq!(state.last_updated_block, 102);
+}
+
+// is_retryable_error
+#[test]
+fn test_retryable_error_detects_timeout() {
+    let err = eyre::eyre!("request timeout after 30s");
+    assert!(is_retryable_error(&err));
+}
+
+#[test]
+fn test_retryable_error_detects_503() {
+    let err = eyre::eyre!("HTTP 503 Service Unavailable");
+    assert!(is_retryable_error(&err));
+}
+
+#[test]
+fn test_retryable_error_rejects_permanent() {
+    let err = eyre::eyre!("invalid argument: malformed address");
+    assert!(!is_retryable_error(&err));
 }
