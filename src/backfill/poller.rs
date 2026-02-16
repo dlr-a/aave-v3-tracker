@@ -2,12 +2,13 @@ use crate::backfill::runner::backfill;
 use crate::db::connection::DbPool;
 use crate::db::repositories::processed_events_repository;
 use crate::db::repositories::sync_status_repository;
+use crate::provider::MultiProvider;
 use alloy::providers::Provider;
 use backoff::{ExponentialBackoff, future::retry};
 use eyre::Result;
 use std::time::Duration;
 
-pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'static) -> Result<()> {
+pub async fn backfill_loop(pool: &DbPool, provider: MultiProvider) -> Result<()> {
     const CONFIRMATIONS: i64 = 20;
     const STEP: i64 = 1_000;
     const MIN_GAP: i64 = 10;

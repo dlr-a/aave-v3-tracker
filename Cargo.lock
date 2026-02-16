@@ -7,9 +7,11 @@ name = "aave-v3-tracker"
 version = "0.1.0"
 dependencies = [
  "alloy",
+ "alloy-network",
  "alloy-primitives",
  "alloy-provider",
  "alloy-sol-types",
+ "async-trait",
  "backoff",
  "bigdecimal",
  "chrono",

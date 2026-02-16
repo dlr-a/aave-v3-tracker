@@ -9,11 +9,11 @@ use crate::abi::{
 use crate::backfill::dispatcher::handle_log_logic;
 use crate::db::connection::DbPool;
 use crate::db::repositories::sync_status_repository;
+use crate::provider::{MultiProvider, is_provider_error};
 use alloy::primitives::Address;
 use alloy::{providers::Provider, rpc::types::eth::Filter};
 use alloy_primitives::address;
 use alloy_sol_types::SolEvent;
-use backoff::{ExponentialBackoff, future::retry};
 use diesel_async::AsyncConnection;
 use eyre::{Context, Result};
 use std::time::{Duration, Instant};
@@ -41,7 +41,7 @@ impl Default for BackfillConfig {
 
 pub async fn backfill(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
 ) -> Result<()> {
@@ -127,7 +127,7 @@ pub async fn backfill(
 
 async fn process_chunk_with_retry(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
     addresses: &[Address],
@@ -135,52 +135,57 @@ async fn process_chunk_with_retry(
     config: &BackfillConfig,
 ) -> Result<usize> {
     let start_time = Instant::now();
+    let mut interval = Duration::from_millis(100);
+    let max_interval = Duration::from_secs(10);
 
-    let backoff = ExponentialBackoff {
-        max_elapsed_time: Some(config.backoff_max_elapsed),
-        initial_interval: Duration::from_millis(100),
-        max_interval: Duration::from_secs(10),
-        multiplier: 2.0,
-        randomization_factor: 0.3,
-        ..Default::default()
-    };
+    loop {
+        match process_chunk_once(
+            pool,
+            provider.clone(),
+            from_block,
+            to_block,
+            addresses,
+            events,
+        )
+        .await
+        {
+            Ok(log_count) => {
+                tracing::info!(
+                    from = from_block,
+                    to = to_block,
+                    logs = log_count,
+                    duration_ms = start_time.elapsed().as_millis(),
+                    "Chunk committed"
+                );
+                return Ok(log_count);
+            }
+            Err(e) => {
+                if start_time.elapsed() > config.backoff_max_elapsed {
+                    return Err(e);
+                }
 
-    let log_count = retry(backoff, || {
-        let pool = pool.clone();
-        let provider = provider.clone();
-        let addresses = addresses.to_vec();
-        let events = events.to_vec();
+                if is_provider_error(&e) {
+                    provider.rotate();
+                    tracing::warn!(error = ?e, "Provider error, rotated");
+                    interval = Duration::from_millis(100);
+                    continue;
+                } else if is_retryable_error(&e) {
+                    tracing::warn!(error = ?e, "Transient error, will retry");
+                    interval = (interval * 2).min(max_interval);
+                } else {
+                    tracing::error!(error = ?e, "Permanent error");
+                    return Err(e);
+                }
 
-        async move {
-            process_chunk_once(&pool, provider, from_block, to_block, &addresses, &events)
-                .await
-                .map_err(|e| {
-                    if is_retryable_error(&e) {
-                        tracing::warn!(error = ?e, "Transient error, will retry");
-                        backoff::Error::transient(e)
-                    } else {
-                        tracing::error!(error = ?e, "Permanent error");
-                        backoff::Error::permanent(e)
-                    }
-                })
+                tokio::time::sleep(interval).await;
+            }
         }
-    })
-    .await?;
-
-    tracing::info!(
-        from = from_block,
-        to = to_block,
-        logs = log_count,
-        duration_ms = start_time.elapsed().as_millis(),
-        "Chunk committed"
-    );
-
-    Ok(log_count)
+    }
 }
 
 async fn process_chunk_once(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
     addresses: &[Address],

@@ -3,8 +3,8 @@ use aave_v3_tracker::db;
 use aave_v3_tracker::db::repositories::sync_status_repository;
 use aave_v3_tracker::sync_reserves::fetch_reserves::fetch_reserves;
 // use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
+use aave_v3_tracker::provider::MultiProvider;
 use alloy_provider::Provider;
-use alloy_provider::ProviderBuilder;
 use dotenvy::dotenv;
 use std::env;
 use tracing::{error, info /*warn*/};
@@ -17,9 +17,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenv().ok();
 
+    let http_rpc_urls: Vec<String> = env::var("HTTP_RPC_URLS")
+        .or_else(|_| env::var("HTTP_RPC_URL").map(|u| u.to_string()))
+        .expect("Set HTTP_RPC_URLS or HTTP_RPC_URL")
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     // let ws_rpc_url = env::var("WS_RPC_URL").expect("Couldn't find WS_RPC_URL");
-    let http_rpc_url = env::var("HTTP_RPC_URL").expect("Couldn't find HTTP_RPC_URL");
-    let http_provider = ProviderBuilder::new().connect_http(http_rpc_url.parse()?);
+    let first_url = http_rpc_urls[0].clone();
+    let http_provider = MultiProvider::new(http_rpc_urls)?;
 
     let pool = db::connection::init_pool().await;
     let mut conn = pool.get().await?;
@@ -31,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         info!("No snapshot found. Running initial fetch_reserves…");
         info!("Starting reserves synchronization...");
 
-        fetch_reserves(&pool, http_rpc_url.clone()).await?;
+        fetch_reserves(&pool, first_url).await?;
 
         sync_status_repository::update_last_block(&mut conn, current_head).await?;
         info!("Reserves synced successfully!");
