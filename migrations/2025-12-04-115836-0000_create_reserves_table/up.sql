@@ -52,6 +52,33 @@ CREATE TABLE reserve_state (
     last_updated_log_index BIGINT NOT NULL DEFAULT 0
 );
 
+CREATE TABLE user_positions (
+    user_address              CHAR(42) NOT NULL,
+    asset_address             CHAR(42) NOT NULL REFERENCES reserves(asset_address),
+    scaled_atoken_balance     NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    scaled_variable_debt      NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    use_as_collateral         BOOLEAN NOT NULL DEFAULT FALSE,
+    atoken_last_index         NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    debt_last_index           NUMERIC(78, 0) NOT NULL DEFAULT 0,
+    last_updated_block        BIGINT NOT NULL DEFAULT 0,
+    last_updated_log_index    BIGINT NOT NULL DEFAULT 0,
+    is_active                 BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at_block          BIGINT NOT NULL,
+    PRIMARY KEY (user_address, asset_address)
+);
+
+
+CREATE INDEX idx_user_positions_user ON user_positions(user_address);
+CREATE INDEX idx_user_positions_asset ON user_positions(asset_address);
+
+CREATE TABLE user_emode (
+    user_address      CHAR(42) PRIMARY KEY,
+    emode_category_id INTEGER NOT NULL DEFAULT 0,
+    last_updated_block     BIGINT NOT NULL,
+    last_updated_log_index BIGINT NOT NULL
+);
+
+
 CREATE TABLE processed_events (
     tx_hash CHAR(66) NOT NULL,
     log_index BIGINT NOT NULL,

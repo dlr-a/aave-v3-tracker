@@ -1,6 +1,8 @@
 use crate::db::schema::processed_events;
 use crate::db::schema::reserve_state;
 use crate::db::schema::sync_status;
+use crate::db::schema::user_emode;
+use crate::db::schema::user_positions;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -159,4 +161,58 @@ pub struct NewSyncStatus {
 pub struct SyncStatus {
     pub id: i32,
     pub last_processed_block: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = user_positions)]
+#[diesel(primary_key(user_address, asset_address))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UserPosition {
+    pub user_address: String,
+    pub asset_address: String,
+    pub scaled_atoken_balance: BigDecimal,
+    pub scaled_variable_debt: BigDecimal,
+    pub use_as_collateral: bool,
+    pub atoken_last_index: BigDecimal,
+    pub debt_last_index: BigDecimal,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+    pub is_active: bool,
+    pub created_at_block: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = user_positions)]
+pub struct NewUserPosition {
+    pub user_address: String,
+    pub asset_address: String,
+    pub scaled_atoken_balance: BigDecimal,
+    pub scaled_variable_debt: BigDecimal,
+    pub use_as_collateral: bool,
+    pub atoken_last_index: BigDecimal,
+    pub debt_last_index: BigDecimal,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+    pub is_active: bool,
+    pub created_at_block: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = user_emode)]
+#[diesel(primary_key(user_address))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UserEmode {
+    pub user_address: String,
+    pub emode_category_id: i32,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = user_emode)]
+pub struct NewUserEmode {
+    pub user_address: String,
+    pub emode_category_id: i32,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
 }

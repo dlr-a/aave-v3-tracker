@@ -77,11 +77,42 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_emode (user_address) {
+        #[max_length = 42]
+        user_address -> Bpchar,
+        emode_category_id -> Int4,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+    }
+}
+
+diesel::table! {
+    user_positions (user_address, asset_address) {
+        #[max_length = 42]
+        user_address -> Bpchar,
+        #[max_length = 42]
+        asset_address -> Bpchar,
+        scaled_atoken_balance -> Numeric,
+        scaled_variable_debt -> Numeric,
+        use_as_collateral -> Bool,
+        atoken_last_index -> Numeric,
+        debt_last_index -> Numeric,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+        is_active -> Bool,
+        created_at_block -> Int8,
+    }
+}
+
 diesel::joinable!(reserve_state -> reserves (asset_address));
+diesel::joinable!(user_positions -> reserves (asset_address));
 
 diesel::allow_tables_to_appear_in_same_query!(
     processed_events,
     reserve_state,
     reserves,
     sync_status,
+    user_emode,
+    user_positions,
 );
