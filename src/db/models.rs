@@ -216,3 +216,21 @@ pub struct NewUserEmode {
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
 }
+
+#[derive(Queryable, Selectable, Identifiable, Debug)]
+#[diesel(table_name = crate::db::schema::bootstrap_state)]
+pub struct BootstrapState {
+    pub id: i32,
+    pub last_cursor: String,
+    pub meta_block: i64,
+    pub completed: bool,
+}
+
+#[derive(Insertable, AsChangeset, Debug)]
+#[diesel(table_name = crate::db::schema::bootstrap_state)]
+pub struct NewBootstrapState {
+    pub id: i32,
+    pub last_cursor: String,
+    pub meta_block: i64,
+    pub completed: bool,
+}

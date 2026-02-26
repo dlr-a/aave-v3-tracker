@@ -71,6 +71,14 @@ CREATE TABLE user_positions (
 CREATE INDEX idx_user_positions_user ON user_positions(user_address);
 CREATE INDEX idx_user_positions_asset ON user_positions(asset_address);
 
+CREATE TABLE bootstrap_state (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    last_cursor TEXT NOT NULL DEFAULT '',
+    meta_block BIGINT NOT NULL DEFAULT 0,
+    completed BOOLEAN NOT NULL DEFAULT FALSE
+);
+
+
 CREATE TABLE user_emode (
     user_address      CHAR(42) PRIMARY KEY,
     emode_category_id INTEGER NOT NULL DEFAULT 0,

@@ -1,6 +1,15 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    bootstrap_state (id) {
+        id -> Int4,
+        last_cursor -> Text,
+        meta_block -> Int8,
+        completed -> Bool,
+    }
+}
+
+diesel::table! {
     processed_events (tx_hash, log_index) {
         #[max_length = 66]
         tx_hash -> Bpchar,
@@ -109,6 +118,7 @@ diesel::joinable!(reserve_state -> reserves (asset_address));
 diesel::joinable!(user_positions -> reserves (asset_address));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    bootstrap_state,
     processed_events,
     reserve_state,
     reserves,
