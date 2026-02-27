@@ -9,6 +9,16 @@ sol! {
         address interestRateStrategyAddress
     );
 
+    event ReserveUsedAsCollateralEnabled(
+        address indexed reserve,
+        address indexed user
+    );
+
+    event ReserveUsedAsCollateralDisabled(
+        address indexed reserve,
+        address indexed user
+    );
+
     event ReserveDataUpdated(
         address indexed reserve,
         uint256 liquidityRate,

@@ -23,4 +23,9 @@ sol! {
         uint256 value,
         uint256 index
     );
+
+    #[sol(rpc)]
+    interface IScaledBalanceToken {
+        function scaledBalanceOf(address user) external view returns (uint256);
+    }
 }
