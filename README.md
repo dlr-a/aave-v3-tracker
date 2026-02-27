@@ -21,25 +21,30 @@ Indexes Aave V3 protocol data on Ethereum to PostgreSQL with replay-safe event p
 - Event deduplication via tx hash + log index
 - Transaction-wrapped writes for atomicity
 - Exponential backoff with jitter on transient errors
+- Multi-RPC provider with automatic failover on provider errors
+
+### In Progress
+
+- Tracking user positions (supply, borrow, collateral state per asset)
 
 ### Planned
 
 - Fetching asset prices
 - Tracking protocol contract address changes via address provider events
-- Tracking user positions
 - Calculating users' health factors
 
 ## Known Issues
 
 - Reorg handling is not implemented. To avoid inconsistencies, WebSocket indexing is disabled and events are written to the database via backfill only, with a ~20 block delay. As a result, indexed data is not real-time and may arrive with latency.
-- RPC rate limits may cause indexing delays or failures. The indexer currently relies on a single RPC endpoint; while exponential backoff is implemented, it may not be sufficient under heavy load or strict provider limits.
 
 ## Database Schema
 
 - **reserves** - Asset-level configuration and risk parameters (mostly static, but updatable via governance)
 - **reserve_state** - Latest on-chain reserve state derived from events (rates, indices, liquidity, debt, treasury accruals)
+- **user_positions** - Per-user, per-asset position state (scaled aToken balance, scaled variable debt, collateral flag)
 - **processed_events** - Deduplication log tracking processed tx hash + log index pairs
 - **sync_status** - Backfill checkpoint storing last processed block number
+- **bootstrap_state** - Subgraph bootstrap progress: cursor, meta block, and completion flag
 
 ## Tracked Events
 
@@ -47,6 +52,8 @@ Indexes Aave V3 protocol data on Ethereum to PostgreSQL with replay-safe event p
 
 - **ReserveInitialized** - New asset added to the protocol
 - **ReserveDataUpdated** - Interest rates and indices changed
+- **ReserveUsedAsCollateralEnabled** - User enabled an asset as collateral
+- **ReserveUsedAsCollateralDisabled** - User disabled an asset as collateral
 
 ### PoolConfigurator
 
@@ -66,3 +73,9 @@ Indexes Aave V3 protocol data on Ethereum to PostgreSQL with replay-safe event p
 - **EModeAssetCategoryChanged** - Efficiency mode category changed
 - **SiloedBorrowingChanged** - Siloed borrowing status changed
 - **UnbackedMintCapChanged** - Unbacked mint cap updated
+
+### Token Contracts (aToken / Variable Debt Token)
+
+- **Mint** - Tokens minted on supply or borrow increase (aToken and variable debt token)
+- **Burn** - Tokens burned on withdrawal or repayment (aToken and variable debt token)
+- **BalanceTransfer** - Scaled aToken balance transfer between users (aToken only)
