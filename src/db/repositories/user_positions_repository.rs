@@ -23,7 +23,7 @@ pub async fn upsert_supply(
         asset_address: asset.to_string(),
         scaled_atoken_balance: delta,
         scaled_variable_debt: BigDecimal::from(0),
-        use_as_collateral: true,
+        use_as_collateral: false,
         atoken_last_index: index,
         debt_last_index: BigDecimal::from(0),
         last_updated_block: block,
