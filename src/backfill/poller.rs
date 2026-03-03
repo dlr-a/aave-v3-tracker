@@ -51,7 +51,10 @@ pub async fn backfill_loop(pool: &DbPool, provider: MultiProvider) -> Result<()>
 
             if last + MIN_GAP < target {
                 let to = (last + STEP).min(target);
-                tracing::info!("Backfill gap detected: {} → {} (head: {})", last, to, head);
+                tracing::info!(
+                    "Backfill gap detected: {} → {} (head: {}, last_synced: {})",
+                    last + 1, to, head, last
+                );
 
                 backfill(pool, provider.clone(), last + 1, to).await?;
                 let cutoff = last.saturating_sub(100);
@@ -93,7 +96,7 @@ pub async fn backfill_loop(pool: &DbPool, provider: MultiProvider) -> Result<()>
 
                 if consecutive_failures == ALERT_THRESHOLD {
                     tracing::error!(
-                        "🚨 ALERT: {} consecutive failures - needs investigation",
+                        "ALERT: {} consecutive failures - needs investigation",
                         consecutive_failures
                     );
                 }

@@ -80,6 +80,11 @@ pub fn is_provider_error(error: &eyre::Report) -> bool {
         "504",
         "unavailable",
         "backend",
+        "-32603",
+        "no response",
+        "-32005",
+        "-32701",
+        "less number of addresses",
     ];
     patterns.iter().any(|p| error_string.contains(p))
 }

@@ -1,13 +1,14 @@
 use crate::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
-    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
-    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
-    ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
-    UnbackedMintCapChanged,
+    BalanceTransfer, BorrowCapChanged, Burn, CollateralConfigurationChanged, DebtCeilingChanged,
+    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, Mint, ReserveActive,
+    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
+    ReserveFlashLoaning, ReserveFrozen, ReserveInitialized, ReserveInterestRateStrategyChanged,
+    ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen, ReserveUsedAsCollateralDisabled,
+    ReserveUsedAsCollateralEnabled, SiloedBorrowingChanged, SupplyCapChanged, UnbackedMintCapChanged,
 };
 use crate::backfill::dispatcher::handle_log_logic;
 use crate::db::connection::DbPool;
+use crate::db::repositories::reserves_repository::{self};
 use crate::db::repositories::sync_status_repository;
 use crate::provider::{MultiProvider, is_provider_error};
 use alloy::primitives::Address;
@@ -46,13 +47,26 @@ pub async fn backfill(
     to_block: i64,
 ) -> Result<()> {
     let config = BackfillConfig::default();
-    let addresses: Vec<Address> = vec![
+
+    let mut addresses: Vec<Address> = vec![
         address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"),
         address!("0x64b761D848206f447Fe2dd461b0c635Ec39EbB27"),
     ];
 
+    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
+    let token_addresses = reserves_repository::get_all_token_addresses(&mut conn)
+        .await
+        .wrap_err("Failed to fetch token addresses")?;
+    addresses.extend(token_addresses);
+
+    drop(conn);
+
+    if from_block > to_block {
+        tracing::info!("Backfill already complete");
+        return Ok(());
+    }
+
     let events = vec![
-        // Transfer::SIGNATURE_HASH,
         ReserveInitialized::SIGNATURE_HASH,
         ReserveDataUpdated::SIGNATURE_HASH,
         ReserveStableRateBorrowing::SIGNATURE_HASH,
@@ -73,24 +87,14 @@ pub async fn backfill(
         LiquidationProtocolFeeChanged::SIGNATURE_HASH,
         SiloedBorrowingChanged::SIGNATURE_HASH,
         UnbackedMintCapChanged::SIGNATURE_HASH,
+        ReserveUsedAsCollateralEnabled::SIGNATURE_HASH,
+        ReserveUsedAsCollateralDisabled::SIGNATURE_HASH,
+        Mint::SIGNATURE_HASH,
+        Burn::SIGNATURE_HASH,
+        BalanceTransfer::SIGNATURE_HASH,
     ];
 
-    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
-    let start_block = match sync_status_repository::get_last_block(&mut conn).await {
-        Ok(last) if last >= from_block => {
-            tracing::info!(checkpoint = last, "Resuming from checkpoint");
-            last + 1
-        }
-        _ => from_block,
-    };
-    drop(conn);
-
-    if start_block > to_block {
-        tracing::info!("Backfill already complete");
-        return Ok(());
-    }
-
-    let mut current = start_block;
+    let mut current = from_block;
     let mut chunk_size = config.initial_chunk_size;
 
     while current <= to_block {
@@ -121,7 +125,7 @@ pub async fn backfill(
         }
     }
 
-    tracing::info!("Backfill completed: blocks {} → {}", from_block, to_block);
+    tracing::info!("Backfill completed: blocks {} -> {}", from_block, to_block);
     Ok(())
 }
 
@@ -212,7 +216,7 @@ async fn process_chunk_once(
 
         Box::pin(async move {
             if log_count == 0 {
-                sync_status_repository::update_last_block(conn, to_block).await?;
+                sync_status_repository::update_last_block(conn, to_block).await.map_err(|e| eyre::eyre!(e))?;
                 return Ok(0);
             }
 
@@ -231,7 +235,7 @@ async fn process_chunk_once(
                     })?;
             }
 
-            sync_status_repository::update_last_block(conn, to_block).await?;
+            sync_status_repository::update_last_block(conn, to_block).await.map_err(|e| eyre::eyre!(e))?;
 
             Ok(log_count)
         })
@@ -255,6 +259,7 @@ pub fn is_retryable_error(error: &eyre::Report) -> bool {
         "unavailable",
         "try again",
         "backend",
+        "block range",
     ];
 
     retryable_patterns
