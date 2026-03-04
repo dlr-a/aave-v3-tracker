@@ -36,6 +36,8 @@ Indexes Aave V3 protocol data on Ethereum to PostgreSQL with replay-safe event p
 ## Known Issues
 
 - Reorg handling is not implemented. To avoid inconsistencies, WebSocket indexing is disabled and events are written to the database via backfill only, with a ~20 block delay. As a result, indexed data is not real-time and may arrive with latency.
+- It has been noticed that the Subgraph data used to bootstrap user positions may contain inaccuracies. Since the Subgraph is an external data source, it can have its own indexing issues or rounding differences. Any inaccuracy in the initial bootstrap state propagates into all subsequent position updates for that user.
+- Scaled balance computations may drift by ±1 wei per event due to `rayDiv`/`rayMul` rounding in Aave's fixed-point arithmetic. This error may accumulate for users with many transactions and is a protocol-level property, not a bug in this indexer — the discrepancy is visible on-chain even between `Supply` and `Mint` events within the same transaction (e.g. [this example](https://etherscan.io/tx/0x5e9eb74f9f6130d951053c5a7fefdae88b229d28e0a53c3604fff66124319e91#eventlog)).
 
 ## Database Schema
 
