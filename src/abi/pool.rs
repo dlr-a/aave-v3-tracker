@@ -28,6 +28,11 @@ sol! {
         uint256 variableBorrowIndex
     );
 
+    event UserEModeSet(
+        address indexed user,
+        uint8 categoryId
+    );
+
     #[sol(rpc)]
     interface IPool {
         struct ReserveConfigurationMap {

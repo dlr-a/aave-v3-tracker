@@ -93,6 +93,15 @@ sol! {
         uint8 newCategoryId
     );
 
+    event EModeCategoryAdded(
+        uint8 indexed categoryId,
+        uint256 ltv,
+        uint256 liquidationThreshold,
+        uint256 liquidationBonus,
+        address oracle,
+        string label
+    );
+
     event SiloedBorrowingChanged(
         address indexed asset,
         bool oldState,
