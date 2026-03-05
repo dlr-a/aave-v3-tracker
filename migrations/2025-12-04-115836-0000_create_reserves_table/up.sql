@@ -86,6 +86,20 @@ CREATE TABLE user_emode (
     last_updated_log_index BIGINT NOT NULL
 );
 
+CREATE TABLE emode_categories (
+    category_id   INTEGER PRIMARY KEY,
+    ltv           BIGINT NOT NULL DEFAULT 0,
+    liquidation_threshold BIGINT NOT NULL DEFAULT 0,
+    liquidation_bonus     BIGINT NOT NULL DEFAULT 0,
+    collateral_bitmap NUMERIC(39, 0) NOT NULL DEFAULT 0,
+    borrowable_bitmap NUMERIC(39, 0) NOT NULL DEFAULT 0,
+    ltvzero_bitmap    NUMERIC(39, 0) NOT NULL DEFAULT 0,
+    label         VARCHAR(64) NOT NULL DEFAULT '',
+    last_updated_block     BIGINT NOT NULL DEFAULT 0,
+    last_updated_log_index BIGINT NOT NULL DEFAULT 0
+);
+
+
 
 CREATE TABLE processed_events (
     tx_hash CHAR(66) NOT NULL,

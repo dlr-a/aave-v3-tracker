@@ -5,3 +5,4 @@ DROP TABLE IF EXISTS reserves CASCADE;
 DROP TABLE IF EXISTS user_emode CASCADE;
 DROP TABLE IF EXISTS user_positions CASCADE;
 DROP TABLE IF EXISTS bootstrap_state;
+DROP TABLE emode_categories;
