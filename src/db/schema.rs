@@ -10,6 +10,22 @@ diesel::table! {
 }
 
 diesel::table! {
+    emode_categories (category_id) {
+        category_id -> Int4,
+        ltv -> Int8,
+        liquidation_threshold -> Int8,
+        liquidation_bonus -> Int8,
+        collateral_bitmap -> Numeric,
+        borrowable_bitmap -> Numeric,
+        ltvzero_bitmap -> Numeric,
+        #[max_length = 64]
+        label -> Varchar,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+    }
+}
+
+diesel::table! {
     processed_events (tx_hash, log_index) {
         #[max_length = 66]
         tx_hash -> Bpchar,
@@ -61,7 +77,6 @@ diesel::table! {
         is_collateral_enabled -> Bool,
         is_stable_borrow_enabled -> Bool,
         is_flash_loan_enabled -> Bool,
-        emode_category_id -> Int4,
         debt_ceiling -> Numeric,
         liquidation_protocol_fee -> Int8,
         is_siloed_borrowing -> Bool,
@@ -119,6 +134,7 @@ diesel::joinable!(user_positions -> reserves (asset_address));
 
 diesel::allow_tables_to_appear_in_same_query!(
     bootstrap_state,
+    emode_categories,
     processed_events,
     reserve_state,
     reserves,

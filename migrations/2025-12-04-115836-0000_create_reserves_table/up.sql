@@ -20,7 +20,6 @@ CREATE TABLE reserves (
     is_collateral_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     is_stable_borrow_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     is_flash_loan_enabled BOOLEAN NOT NULL DEFAULT TRUE,
-    emode_category_id INTEGER NOT NULL DEFAULT 0,
     debt_ceiling NUMERIC(78, 0) NOT NULL DEFAULT 0,
     liquidation_protocol_fee BIGINT NOT NULL DEFAULT 0,
     is_siloed_borrowing BOOLEAN NOT NULL DEFAULT FALSE,

@@ -1,3 +1,4 @@
+use crate::db::schema::emode_categories;
 use crate::db::schema::processed_events;
 use crate::db::schema::reserve_state;
 use crate::db::schema::sync_status;
@@ -31,7 +32,6 @@ pub struct Reserve {
     pub is_collateral_enabled: bool,
     pub is_stable_borrow_enabled: bool,
     pub is_flash_loan_enabled: bool,
-    pub emode_category_id: i32,
     pub debt_ceiling: BigDecimal,
     pub liquidation_protocol_fee: i64,
     pub is_siloed_borrowing: bool,
@@ -40,7 +40,7 @@ pub struct Reserve {
     pub atoken_address: String,
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
-    pub interest_rate_strategy_address: Option<String>, // Nullable -> Option
+    pub interest_rate_strategy_address: Option<String>,
 
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
@@ -70,7 +70,6 @@ pub struct NewReserve {
     pub is_collateral_enabled: bool,
     pub is_stable_borrow_enabled: bool,
     pub is_flash_loan_enabled: bool,
-    pub emode_category_id: i32,
     pub debt_ceiling: BigDecimal,
     pub liquidation_protocol_fee: i64,
     pub is_siloed_borrowing: bool,
@@ -213,6 +212,38 @@ pub struct UserEmode {
 pub struct NewUserEmode {
     pub user_address: String,
     pub emode_category_id: i32,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = emode_categories)]
+#[diesel(primary_key(category_id))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct EmodeCategory {
+    pub category_id: i32,
+    pub ltv: i64,
+    pub liquidation_threshold: i64,
+    pub liquidation_bonus: i64,
+    pub collateral_bitmap: BigDecimal,
+    pub borrowable_bitmap: BigDecimal,
+    pub ltvzero_bitmap: BigDecimal,
+    pub label: String,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = emode_categories)]
+pub struct NewEmodeCategory {
+    pub category_id: i32,
+    pub ltv: i64,
+    pub liquidation_threshold: i64,
+    pub liquidation_bonus: i64,
+    pub collateral_bitmap: BigDecimal,
+    pub borrowable_bitmap: BigDecimal,
+    pub ltvzero_bitmap: BigDecimal,
+    pub label: String,
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
 }
