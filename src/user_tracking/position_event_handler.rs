@@ -1,9 +1,12 @@
 use crate::abi::{
     BalanceTransfer, Burn, Mint, ReserveUsedAsCollateralDisabled, ReserveUsedAsCollateralEnabled,
+    UserEModeSet,
 };
 use crate::db::repositories::reserves_repository;
 use crate::db::repositories::reserves_repository::TokenType;
-use crate::db::repositories::{processed_events_repository, user_positions_repository};
+use crate::db::repositories::{
+    processed_events_repository, user_emode_repository, user_positions_repository,
+};
 use alloy::primitives::{U256, uint};
 use alloy::rpc::types::eth::Log;
 use alloy_sol_types::SolEvent;
@@ -40,7 +43,8 @@ pub enum ScaledDelta {
 /// - Real scaled delta comes from (value - balanceIncrease).rayDiv(index)
 ///
 /// Burn:
-/// - amount is converted to scaled via amount.rayDiv(index)
+/// - Event emits value = originalAmount - balanceIncrease
+/// - Real scaled decrease comes from (value + balanceIncrease).rayDiv(index)
 /// - If interest (balanceIncrease) > amount, a Mint event is emitted (net decrease)
 /// - Otherwise a Burn event is emitted
 /// - Real scaled decrease comes from (value + balanceIncrease).rayDiv(index)
@@ -390,5 +394,30 @@ async fn handle_debt_burn(
         .wrap_err("Failed to clear inactive after vDebtToken Burn")?;
 
     info!(user = %user, asset = %asset_addr, "vDebtToken Burn processed");
+    Ok(())
+}
+
+pub async fn process_user_emode_event(conn: &mut AsyncPgConnection, log: &Log) -> Result<()> {
+    let block = log
+        .block_number
+        .ok_or_else(|| anyhow!("missing block_number in log"))? as i64;
+
+    let log_idx = log
+        .log_index
+        .ok_or_else(|| anyhow!("missing log_index in log"))? as i64;
+
+    let decoded = log
+        .log_decode::<UserEModeSet>()
+        .wrap_err("Failed to decode UserEModeSet")?;
+    let e = decoded.data();
+
+    let user = e.user.to_string();
+    let category = e.categoryId as i32;
+
+    user_emode_repository::upsert(conn, &user, category, block, log_idx)
+        .await
+        .wrap_err("Failed to upsert user eMode")?;
+
+    info!(user = %user, category = category, block = block, "UserEModeSet processed");
     Ok(())
 }
