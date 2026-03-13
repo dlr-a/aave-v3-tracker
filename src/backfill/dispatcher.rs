@@ -1,9 +1,12 @@
 use crate::abi::{
     BalanceTransfer, Burn, Mint, ReserveUsedAsCollateralDisabled, ReserveUsedAsCollateralEnabled,
+    UserEModeSet,
 };
 use crate::db::connection::DbPool;
 use crate::sync_reserves::reserve_event_handler::process_reserve_event;
-use crate::user_tracking::position_event_handler::{process_collateral_event, process_token_event};
+use crate::user_tracking::position_event_handler::{
+    process_collateral_event, process_token_event, process_user_emode_event,
+};
 use alloy::providers::Provider;
 use alloy::rpc::types::eth::Log;
 use alloy_sol_types::SolEvent;
@@ -30,6 +33,8 @@ pub async fn handle_log_logic(
         || topic0 == ReserveUsedAsCollateralDisabled::SIGNATURE_HASH
     {
         process_collateral_event(conn, log).await
+    } else if topic0 == UserEModeSet::SIGNATURE_HASH {
+        process_user_emode_event(conn, log).await
     } else {
         process_reserve_event(conn, pool, provider, log).await
     }

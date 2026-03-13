@@ -1,10 +1,12 @@
 use crate::abi::{
+    AssetBorrowableInEModeChanged, AssetCollateralInEModeChanged, AssetLtvzeroInEModeChanged,
     BalanceTransfer, BorrowCapChanged, Burn, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, Mint, ReserveActive,
-    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
+    EModeCategoryAdded, LiquidationProtocolFeeChanged, Mint,
+    ReserveActive, ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
     ReserveFlashLoaning, ReserveFrozen, ReserveInitialized, ReserveInterestRateStrategyChanged,
     ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen, ReserveUsedAsCollateralDisabled,
-    ReserveUsedAsCollateralEnabled, SiloedBorrowingChanged, SupplyCapChanged, UnbackedMintCapChanged,
+    ReserveUsedAsCollateralEnabled, SiloedBorrowingChanged, SupplyCapChanged,
+    UnbackedMintCapChanged, UserEModeSet,
 };
 use crate::backfill::dispatcher::handle_log_logic;
 use crate::db::connection::DbPool;
@@ -82,7 +84,9 @@ pub async fn backfill(
         BorrowCapChanged::SIGNATURE_HASH,
         SupplyCapChanged::SIGNATURE_HASH,
         ReserveFlashLoaning::SIGNATURE_HASH,
-        EModeAssetCategoryChanged::SIGNATURE_HASH,
+        AssetCollateralInEModeChanged::SIGNATURE_HASH,
+        AssetBorrowableInEModeChanged::SIGNATURE_HASH,
+        AssetLtvzeroInEModeChanged::SIGNATURE_HASH,
         DebtCeilingChanged::SIGNATURE_HASH,
         LiquidationProtocolFeeChanged::SIGNATURE_HASH,
         SiloedBorrowingChanged::SIGNATURE_HASH,
@@ -92,6 +96,8 @@ pub async fn backfill(
         Mint::SIGNATURE_HASH,
         Burn::SIGNATURE_HASH,
         BalanceTransfer::SIGNATURE_HASH,
+        UserEModeSet::SIGNATURE_HASH,
+        EModeCategoryAdded::SIGNATURE_HASH,
     ];
 
     let mut current = from_block;
