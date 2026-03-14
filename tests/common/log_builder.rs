@@ -3,11 +3,12 @@ use alloy::rpc::types::Log;
 use alloy::sol_types::SolEvent;
 
 use aave_v3_tracker::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
-    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
+    AssetBorrowableInEModeChanged, AssetCollateralInEModeChanged, AssetLtvzeroInEModeChanged,
+    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged, EModeCategoryAdded,
+    LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing, ReserveDataUpdated,
+    ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
     ReserveInterestRateStrategyChanged, ReservePaused, ReserveUnfrozen, SiloedBorrowingChanged,
-    SupplyCapChanged, UnbackedMintCapChanged,
+    SupplyCapChanged, UnbackedMintCapChanged, UserEModeSet,
 };
 
 pub struct LogBuilder {
@@ -145,12 +146,58 @@ impl LogBuilder {
         self.wrap_log_data(Address::ZERO, event.encode_log_data())
     }
 
-    pub fn emode_category_changed(self, asset: Address, old_cat: u8, new_cat: u8) -> Log {
-        let event = EModeAssetCategoryChanged {
-            asset,
-            oldCategoryId: old_cat,
-            newCategoryId: new_cat,
+    pub fn asset_collateral_in_emode_changed(
+        self,
+        asset: Address,
+        category_id: u8,
+        collateral: bool,
+    ) -> Log {
+        let event = AssetCollateralInEModeChanged { asset, categoryId: category_id, collateral };
+        self.wrap_log_data(Address::ZERO, event.encode_log_data())
+    }
+
+    pub fn asset_borrowable_in_emode_changed(
+        self,
+        asset: Address,
+        category_id: u8,
+        borrowable: bool,
+    ) -> Log {
+        let event = AssetBorrowableInEModeChanged { asset, categoryId: category_id, borrowable };
+        self.wrap_log_data(Address::ZERO, event.encode_log_data())
+    }
+
+    pub fn asset_ltvzero_in_emode_changed(
+        self,
+        asset: Address,
+        category_id: u8,
+        ltvzero: bool,
+    ) -> Log {
+        let event = AssetLtvzeroInEModeChanged { asset, categoryId: category_id, ltvzero };
+        self.wrap_log_data(Address::ZERO, event.encode_log_data())
+    }
+
+    pub fn emode_category_added(
+        self,
+        category_id: u8,
+        ltv: u64,
+        liquidation_threshold: u64,
+        liquidation_bonus: u64,
+        oracle: Address,
+        label: String,
+    ) -> Log {
+        let event = EModeCategoryAdded {
+            categoryId: category_id,
+            ltv: U256::from(ltv),
+            liquidationThreshold: U256::from(liquidation_threshold),
+            liquidationBonus: U256::from(liquidation_bonus),
+            oracle,
+            label,
         };
+        self.wrap_log_data(Address::ZERO, event.encode_log_data())
+    }
+
+    pub fn user_emode_set(self, user: Address, category_id: u8) -> Log {
+        let event = UserEModeSet { user, categoryId: category_id };
         self.wrap_log_data(Address::ZERO, event.encode_log_data())
     }
 
