@@ -268,28 +268,6 @@ async fn test_set_flash_loan_status() {
 }
 
 #[tokio::test]
-async fn test_update_emode_category() {
-    let ctx = TestDb::new().await;
-    let mut conn = ctx.conn().await;
-    let asset = unique_asset();
-
-    ReserveBuilder::new()
-        .asset_address(&asset)
-        .at_block(100, 0)
-        .insert(&mut conn)
-        .await;
-
-    let updated = reserves_repository::update_emode_category(&mut conn, asset.clone(), 1, 101, 0)
-        .await
-        .unwrap();
-
-    assert_eq!(updated, 1);
-
-    let reserve = get_reserve(&mut conn, &asset).await.unwrap();
-    assert_eq!(reserve.emode_category_id, 1);
-}
-
-#[tokio::test]
 async fn test_update_stable_borrow_address() {
     let ctx = TestDb::new().await;
     let mut conn = ctx.conn().await;

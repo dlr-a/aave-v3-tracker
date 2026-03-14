@@ -146,7 +146,6 @@ pub struct ReserveBuilder {
     is_flash_loan_enabled: bool,
     is_stable_borrow_enabled: bool,
     is_siloed_borrowing: bool,
-    emode_category_id: i32,
     debt_ceiling: BigDecimal,
     liquidation_protocol_fee: i64,
     unbacked_mint_cap: BigDecimal,
@@ -172,7 +171,6 @@ impl Default for ReserveBuilder {
             is_flash_loan_enabled: true,
             is_stable_borrow_enabled: false,
             is_siloed_borrowing: false,
-            emode_category_id: 0,
             debt_ceiling: BigDecimal::from(0),
             liquidation_protocol_fee: 1000,
             unbacked_mint_cap: BigDecimal::from(0),
@@ -268,11 +266,6 @@ impl ReserveBuilder {
         self
     }
 
-    pub fn emode_category_id(mut self, val: i32) -> Self {
-        self.emode_category_id = val;
-        self
-    }
-
     pub fn debt_ceiling(mut self, val: i64) -> Self {
         self.debt_ceiling = BigDecimal::from(val);
         self
@@ -310,7 +303,6 @@ impl ReserveBuilder {
             is_collateral_enabled: true,
             is_stable_borrow_enabled: self.is_stable_borrow_enabled,
             is_flash_loan_enabled: self.is_flash_loan_enabled,
-            emode_category_id: self.emode_category_id,
             debt_ceiling: self.debt_ceiling,
             liquidation_protocol_fee: self.liquidation_protocol_fee,
             is_siloed_borrowing: self.is_siloed_borrowing,

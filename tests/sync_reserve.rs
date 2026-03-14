@@ -27,7 +27,6 @@ fn create_new_reserve(asset: &str) -> NewReserve {
         is_collateral_enabled: true,
         is_stable_borrow_enabled: false,
         is_flash_loan_enabled: true,
-        emode_category_id: 0,
         debt_ceiling: BigDecimal::from(0),
         liquidation_protocol_fee: 1000,
         is_siloed_borrowing: false,
@@ -106,7 +105,6 @@ async fn test_sync_reserve_preserves_all_fields() {
     new_reserve.liquidation_threshold = 9000;
     new_reserve.liquidation_bonus = 10800;
     new_reserve.is_stable_borrow_enabled = true;
-    new_reserve.emode_category_id = 2;
     new_reserve.debt_ceiling = BigDecimal::from(500_000);
     new_reserve.liquidation_protocol_fee = 500;
     new_reserve.is_siloed_borrowing = true;
@@ -123,7 +121,6 @@ async fn test_sync_reserve_preserves_all_fields() {
     assert_eq!(reserve.liquidation_threshold, 9000);
     assert_eq!(reserve.liquidation_bonus, 10800);
     assert_eq!(reserve.is_stable_borrow_enabled, true);
-    assert_eq!(reserve.emode_category_id, 2);
     assert_eq!(reserve.debt_ceiling, BigDecimal::from(500_000));
     assert_eq!(reserve.liquidation_protocol_fee, 500);
     assert_eq!(reserve.is_siloed_borrowing, true);
