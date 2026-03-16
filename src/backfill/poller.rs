@@ -2,12 +2,13 @@ use crate::backfill::runner::backfill;
 use crate::db::connection::DbPool;
 use crate::db::repositories::processed_events_repository;
 use crate::db::repositories::sync_status_repository;
+use crate::provider::MultiProvider;
 use alloy::providers::Provider;
 use backoff::{ExponentialBackoff, future::retry};
 use eyre::Result;
 use std::time::Duration;
 
-pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'static) -> Result<()> {
+pub async fn backfill_loop(pool: &DbPool, provider: MultiProvider) -> Result<()> {
     const CONFIRMATIONS: i64 = 20;
     const STEP: i64 = 1_000;
     const MIN_GAP: i64 = 10;
@@ -50,7 +51,10 @@ pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'sta
 
             if last + MIN_GAP < target {
                 let to = (last + STEP).min(target);
-                tracing::info!("Backfill gap detected: {} → {} (head: {})", last, to, head);
+                tracing::info!(
+                    "Backfill gap detected: {} → {} (head: {}, last_synced: {})",
+                    last + 1, to, head, last
+                );
 
                 backfill(pool, provider.clone(), last + 1, to).await?;
                 let cutoff = last.saturating_sub(100);
@@ -92,7 +96,7 @@ pub async fn backfill_loop(pool: &DbPool, provider: impl Provider + Clone + 'sta
 
                 if consecutive_failures == ALERT_THRESHOLD {
                     tracing::error!(
-                        "🚨 ALERT: {} consecutive failures - needs investigation",
+                        "ALERT: {} consecutive failures - needs investigation",
                         consecutive_failures
                     );
                 }

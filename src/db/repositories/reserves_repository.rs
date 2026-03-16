@@ -2,12 +2,22 @@ use crate::db::connection::DbPool;
 use crate::db::models::NewReserve;
 use crate::db::schema::reserves::dsl::*;
 use crate::errors::TrackerError;
+use alloy_primitives::Address;
 use bigdecimal::BigDecimal;
 use diesel::pg::upsert::excluded;
 use diesel::prelude::*;
 use diesel_async::AsyncPgConnection;
 use diesel_async::RunQueryDsl;
 use eyre::Result;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum TokenType {
+    AToken,
+    VariableDebtToken,
+}
+
+pub type TokenAddressMap = HashMap<Address, (String, TokenType)>;
 
 pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usize, TrackerError> {
     let mut conn = pool.get().await?;
@@ -38,7 +48,6 @@ pub async fn sync_reserve(pool: &DbPool, new_reserve: NewReserve) -> Result<usiz
             is_collateral_enabled.eq(excluded(is_collateral_enabled)),
             is_stable_borrow_enabled.eq(excluded(is_stable_borrow_enabled)),
             is_flash_loan_enabled.eq(excluded(is_flash_loan_enabled)),
-            emode_category_id.eq(excluded(emode_category_id)),
             debt_ceiling.eq(excluded(debt_ceiling)),
             liquidation_protocol_fee.eq(excluded(liquidation_protocol_fee)),
             is_siloed_borrowing.eq(excluded(is_siloed_borrowing)),
@@ -354,31 +363,6 @@ pub async fn set_flash_loan_status(
     Ok(result)
 }
 
-pub async fn update_emode_category(
-    conn: &mut AsyncPgConnection,
-    asset: String,
-    category_id: i32,
-    block_number: i64,
-    log_index: i64,
-) -> Result<usize> {
-    let result = diesel::update(
-        reserves.filter(asset_address.eq(asset)).filter(
-            last_updated_block.lt(block_number).or(last_updated_block
-                .eq(block_number)
-                .and(last_updated_log_index.lt(log_index))),
-        ),
-    )
-    .set((
-        emode_category_id.eq(category_id),
-        last_updated_block.eq(block_number),
-        last_updated_log_index.eq(log_index),
-    ))
-    .execute(conn)
-    .await?;
-
-    Ok(result)
-}
-
 pub async fn update_debt_ceiling(
     conn: &mut AsyncPgConnection,
     asset: String,
@@ -514,4 +498,56 @@ pub async fn reserve_exists(conn: &mut AsyncPgConnection, asset: String) -> Resu
         .await?;
 
     Ok(result > 0)
+}
+
+pub async fn get_token_address_map(conn: &mut AsyncPgConnection) -> Result<TokenAddressMap> {
+    let results: Vec<(String, String, String)> = reserves
+        .select((asset_address, atoken_address, v_debt_token_address))
+        .load(conn)
+        .await?;
+
+    let mut map = HashMap::new();
+    for (asset, atoken, vdebt) in results {
+        let asset_clean = asset.trim().to_string();
+        if let Ok(addr) = atoken.trim().parse::<Address>() {
+            map.insert(addr, (asset_clean.clone(), TokenType::AToken));
+        }
+        if let Ok(addr) = vdebt.trim().parse::<Address>() {
+            map.insert(addr, (asset_clean, TokenType::VariableDebtToken));
+        }
+    }
+
+    Ok(map)
+}
+
+pub async fn get_reserve_id_for_asset(
+    conn: &mut AsyncPgConnection,
+    asset: &str,
+) -> Result<Option<i32>> {
+    let result = reserves
+        .filter(asset_address.eq(asset))
+        .select(reserve_id)
+        .first::<Option<i32>>(conn)
+        .await
+        .optional()?;
+    Ok(result.flatten())
+}
+
+pub async fn get_all_token_addresses(conn: &mut AsyncPgConnection) -> Result<Vec<Address>> {
+    let results: Vec<(String, String)> = reserves
+        .select((atoken_address, v_debt_token_address))
+        .load(conn)
+        .await?;
+
+    let mut addrs = Vec::new();
+    for (atoken, vdebt) in results {
+        if let Ok(addr) = atoken.trim().parse::<Address>() {
+            addrs.push(addr);
+        }
+        if let Ok(addr) = vdebt.trim().parse::<Address>() {
+            addrs.push(addr);
+        }
+    }
+
+    Ok(addrs)
 }

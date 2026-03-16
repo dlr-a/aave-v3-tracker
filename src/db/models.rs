@@ -1,6 +1,9 @@
+use crate::db::schema::emode_categories;
 use crate::db::schema::processed_events;
 use crate::db::schema::reserve_state;
 use crate::db::schema::sync_status;
+use crate::db::schema::user_emode;
+use crate::db::schema::user_positions;
 use bigdecimal::BigDecimal;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
@@ -29,7 +32,6 @@ pub struct Reserve {
     pub is_collateral_enabled: bool,
     pub is_stable_borrow_enabled: bool,
     pub is_flash_loan_enabled: bool,
-    pub emode_category_id: i32,
     pub debt_ceiling: BigDecimal,
     pub liquidation_protocol_fee: i64,
     pub is_siloed_borrowing: bool,
@@ -38,7 +40,7 @@ pub struct Reserve {
     pub atoken_address: String,
     pub v_debt_token_address: String,
     pub s_debt_token_address: String,
-    pub interest_rate_strategy_address: Option<String>, // Nullable -> Option
+    pub interest_rate_strategy_address: Option<String>,
 
     pub last_updated_block: i64,
     pub last_updated_log_index: i64,
@@ -68,7 +70,6 @@ pub struct NewReserve {
     pub is_collateral_enabled: bool,
     pub is_stable_borrow_enabled: bool,
     pub is_flash_loan_enabled: bool,
-    pub emode_category_id: i32,
     pub debt_ceiling: BigDecimal,
     pub liquidation_protocol_fee: i64,
     pub is_siloed_borrowing: bool,
@@ -159,4 +160,108 @@ pub struct NewSyncStatus {
 pub struct SyncStatus {
     pub id: i32,
     pub last_processed_block: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = user_positions)]
+#[diesel(primary_key(user_address, asset_address))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UserPosition {
+    pub user_address: String,
+    pub asset_address: String,
+    pub scaled_atoken_balance: BigDecimal,
+    pub scaled_variable_debt: BigDecimal,
+    pub use_as_collateral: bool,
+    pub atoken_last_index: BigDecimal,
+    pub debt_last_index: BigDecimal,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+    pub is_active: bool,
+    pub created_at_block: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = user_positions)]
+pub struct NewUserPosition {
+    pub user_address: String,
+    pub asset_address: String,
+    pub scaled_atoken_balance: BigDecimal,
+    pub scaled_variable_debt: BigDecimal,
+    pub use_as_collateral: bool,
+    pub atoken_last_index: BigDecimal,
+    pub debt_last_index: BigDecimal,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+    pub is_active: bool,
+    pub created_at_block: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = user_emode)]
+#[diesel(primary_key(user_address))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct UserEmode {
+    pub user_address: String,
+    pub emode_category_id: i32,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = user_emode)]
+pub struct NewUserEmode {
+    pub user_address: String,
+    pub emode_category_id: i32,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug, Clone)]
+#[diesel(table_name = emode_categories)]
+#[diesel(primary_key(category_id))]
+#[diesel(check_for_backend(diesel::pg::Pg))]
+pub struct EmodeCategory {
+    pub category_id: i32,
+    pub ltv: i64,
+    pub liquidation_threshold: i64,
+    pub liquidation_bonus: i64,
+    pub collateral_bitmap: BigDecimal,
+    pub borrowable_bitmap: BigDecimal,
+    pub ltvzero_bitmap: BigDecimal,
+    pub label: String,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Insertable, AsChangeset, Debug, Clone)]
+#[diesel(table_name = emode_categories)]
+pub struct NewEmodeCategory {
+    pub category_id: i32,
+    pub ltv: i64,
+    pub liquidation_threshold: i64,
+    pub liquidation_bonus: i64,
+    pub collateral_bitmap: BigDecimal,
+    pub borrowable_bitmap: BigDecimal,
+    pub ltvzero_bitmap: BigDecimal,
+    pub label: String,
+    pub last_updated_block: i64,
+    pub last_updated_log_index: i64,
+}
+
+#[derive(Queryable, Selectable, Identifiable, Debug)]
+#[diesel(table_name = crate::db::schema::bootstrap_state)]
+pub struct BootstrapState {
+    pub id: i32,
+    pub last_cursor: String,
+    pub meta_block: i64,
+    pub completed: bool,
+}
+
+#[derive(Insertable, AsChangeset, Debug)]
+#[diesel(table_name = crate::db::schema::bootstrap_state)]
+pub struct NewBootstrapState {
+    pub id: i32,
+    pub last_cursor: String,
+    pub meta_block: i64,
+    pub completed: bool,
 }

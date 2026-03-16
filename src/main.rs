@@ -3,8 +3,8 @@ use aave_v3_tracker::db;
 use aave_v3_tracker::db::repositories::sync_status_repository;
 use aave_v3_tracker::sync_reserves::fetch_reserves::fetch_reserves;
 // use crate::sync_reserves::reserve_event_handler::reserve_event_handler;
+use aave_v3_tracker::provider::MultiProvider;
 use alloy_provider::Provider;
-use alloy_provider::ProviderBuilder;
 use dotenvy::dotenv;
 use std::env;
 use tracing::{error, info /*warn*/};
@@ -17,23 +17,34 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     dotenv().ok();
 
+    let http_rpc_urls: Vec<String> = env::var("HTTP_RPC_URLS")
+        .or_else(|_| env::var("HTTP_RPC_URL").map(|u| u.to_string()))
+        .expect("Set HTTP_RPC_URLS or HTTP_RPC_URL")
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
     // let ws_rpc_url = env::var("WS_RPC_URL").expect("Couldn't find WS_RPC_URL");
-    let http_rpc_url = env::var("HTTP_RPC_URL").expect("Couldn't find HTTP_RPC_URL");
-    let http_provider = ProviderBuilder::new().connect_http(http_rpc_url.parse()?);
+    let first_url = http_rpc_urls[0].clone();
+    let http_provider = MultiProvider::new(http_rpc_urls)?;
 
     let pool = db::connection::init_pool().await;
     let mut conn = pool.get().await?;
 
     let current_head = http_provider.get_block_number().await? as i64;
-    let last_block = sync_status_repository::get_last_block(&mut conn).await?;
+    let mut last_block = sync_status_repository::get_last_block(&mut conn)
+        .await
+        .map_err(|e| eyre::eyre!(e))?;
 
     if last_block == 0 {
         info!("No snapshot found. Running initial fetch_reserves…");
         info!("Starting reserves synchronization...");
 
-        fetch_reserves(&pool, http_rpc_url.clone()).await?;
+        fetch_reserves(&pool, first_url).await?;
 
-        sync_status_repository::update_last_block(&mut conn, current_head).await?;
+        sync_status_repository::update_last_block(&mut conn, current_head).await.map_err(|e| eyre::eyre!(e))?;
+        last_block = current_head;
         info!("Reserves synced successfully!");
     }
 
@@ -53,6 +64,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     //         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     //     }
     // });
+
+
+    if let Ok(api_key) = std::env::var("SUBGRAPH_API_KEY") {
+        info!("SUBGRAPH_API_KEY found, attempting position bootstrap...");
+        if let Err(e) = aave_v3_tracker::user_tracking::subgraph_bootstrap::bootstrap_from_subgraph(
+            &pool, &api_key, last_block,
+        )
+        .await
+        {
+            error!("Subgraph bootstrap failed: {:?}", e);
+            error!("Falling back to full position sync from deployment block");
+        }
+    }
 
     tokio::spawn(async move {
         info!("Starting backfill loop...");

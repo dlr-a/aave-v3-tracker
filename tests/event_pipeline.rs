@@ -420,36 +420,6 @@ async fn test_pipeline_flash_loan_changed_updates_db() {
     assert_eq!(reserve.is_flash_loan_enabled, false);
 }
 
-// EMode Category
-#[tokio::test]
-async fn test_pipeline_emode_category_changed_updates_db() {
-    let db = TestDb::new().await;
-    let mut conn = db.conn().await;
-    let asset_str = common::fixtures::unique_asset();
-    let asset_addr = addr_from_hex(&asset_str);
-
-    ReserveBuilder::new()
-        .asset_address(&asset_str)
-        .emode_category_id(0)
-        .at_block(50, 0)
-        .insert(&mut conn)
-        .await;
-
-    let tx = unique_tx_hash();
-    let log = LogBuilder::new()
-        .at_block(100)
-        .log_index(0)
-        .tx_hash(B256::from_str(&tx).unwrap())
-        .emode_category_changed(asset_addr, 0, 1);
-
-    handle_log_logic(&mut conn, &db.pool(), dummy_provider(), &log)
-        .await
-        .unwrap();
-
-    let reserve = get_reserve(&mut conn, &asset_str).await.unwrap();
-    assert_eq!(reserve.emode_category_id, 1);
-}
-
 // Debt Ceiling
 
 #[tokio::test]

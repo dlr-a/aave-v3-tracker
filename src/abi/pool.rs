@@ -9,6 +9,16 @@ sol! {
         address interestRateStrategyAddress
     );
 
+    event ReserveUsedAsCollateralEnabled(
+        address indexed reserve,
+        address indexed user
+    );
+
+    event ReserveUsedAsCollateralDisabled(
+        address indexed reserve,
+        address indexed user
+    );
+
     event ReserveDataUpdated(
         address indexed reserve,
         uint256 liquidityRate,
@@ -16,6 +26,11 @@ sol! {
         uint256 variableBorrowRate,
         uint256 liquidityIndex,
         uint256 variableBorrowIndex
+    );
+
+    event UserEModeSet(
+        address indexed user,
+        uint8 categoryId
     );
 
     #[sol(rpc)]
@@ -42,6 +57,19 @@ sol! {
             uint128 isolationModeTotalDebt;
         }
 
+        #[derive(Debug)]
+        struct CollateralConfig {
+            uint16 ltv;
+            uint16 liquidationThreshold;
+            uint16 liquidationBonus;
+        }
+
         function getReserveData(address asset) external view returns (ReserveData memory);
+
+        function getEModeCategoryCollateralConfig(uint8 id) external view returns (CollateralConfig memory);
+        function getEModeCategoryLabel(uint8 id) external view returns (string memory);
+        function getEModeCategoryCollateralBitmap(uint8 id) external view returns (uint128);
+        function getEModeCategoryBorrowableBitmap(uint8 id) external view returns (uint128);
+        function getEModeCategoryLtvzeroBitmap(uint8 id) external view returns (uint128);
     }
 }

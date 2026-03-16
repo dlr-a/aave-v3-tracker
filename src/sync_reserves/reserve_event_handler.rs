@@ -1,19 +1,23 @@
 use crate::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, IProtocolDataProvider, LiquidationProtocolFeeChanged, ReserveActive,
-    ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
-    ReserveFlashLoaning, ReserveFrozen, ReserveInitialized, ReserveInterestRateStrategyChanged,
-    ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged,
-    SupplyCapChanged, UnbackedMintCapChanged,
+    AssetBorrowableInEModeChanged, AssetCollateralInEModeChanged, AssetLtvzeroInEModeChanged,
+    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged, EModeCategoryAdded,
+    IPool, IProtocolDataProvider, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
+    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
+    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
+    ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
+    UnbackedMintCapChanged,
 };
 use crate::db::connection::DbPool;
+use crate::db::models::NewEmodeCategory;
 use crate::db::repositories::{
-    processed_events_repository, reserve_state_repository, reserves_repository,
+    emode_categories_repository, processed_events_repository, reserve_state_repository,
+    reserves_repository,
 };
 use crate::sync_reserves::fetch_reserves::process_reserve;
 use alloy::primitives::Uint;
 use alloy::primitives::address;
 use alloy::{
+    eips::BlockId,
     providers::{Provider, ProviderBuilder, WsConnect},
     rpc::types::eth::Filter,
     rpc::types::eth::Log,
@@ -46,7 +50,6 @@ pub enum ProcessedLog {
     BorrowCapChanged(BorrowCapChanged),
     ReserveFactorChanged(ReserveFactorChanged),
     ReserveFlashLoaning(ReserveFlashLoaning),
-    EModeAssetCategoryChanged(EModeAssetCategoryChanged),
     DebtCeilingChanged(DebtCeilingChanged),
     LiquidationProtocolFeeChanged(LiquidationProtocolFeeChanged),
     SiloedBorrowingChanged(SiloedBorrowingChanged),
@@ -71,7 +74,6 @@ impl ProcessedLog {
             ProcessedLog::BorrowCapChanged(e) => e.asset,
             ProcessedLog::ReserveFactorChanged(e) => e.asset,
             ProcessedLog::ReserveFlashLoaning(e) => e.asset,
-            ProcessedLog::EModeAssetCategoryChanged(e) => e.asset,
             ProcessedLog::DebtCeilingChanged(e) => e.asset,
             ProcessedLog::LiquidationProtocolFeeChanged(e) => e.asset,
             ProcessedLog::SiloedBorrowingChanged(e) => e.asset,
@@ -158,11 +160,6 @@ pub fn decode_log_type(log: &Log) -> Option<ProcessedLog> {
             .ok()
             .map(|e| ProcessedLog::ReserveFlashLoaning(e.data().clone())),
 
-        EModeAssetCategoryChanged::SIGNATURE_HASH => log
-            .log_decode::<EModeAssetCategoryChanged>()
-            .ok()
-            .map(|e| ProcessedLog::EModeAssetCategoryChanged(e.data().clone())),
-
         DebtCeilingChanged::SIGNATURE_HASH => log
             .log_decode::<DebtCeilingChanged>()
             .ok()
@@ -191,6 +188,66 @@ fn to_bigdecimal<const BITS: usize, const LIMBS: usize>(
     val: Uint<BITS, LIMBS>,
 ) -> Result<BigDecimal> {
     BigDecimal::from_str(&val.to_string()).map_err(|e| eyre!("BigDecimal conversion error: {}", e))
+}
+
+fn bitmap_to_bigdecimal(val: u128) -> Result<BigDecimal> {
+    BigDecimal::from_str(&val.to_string()).map_err(|e| eyre!("BigDecimal conversion error: {}", e))
+}
+
+async fn fetch_emode_category(
+    provider: impl Provider + Clone,
+    pool_addr: Address,
+    category_id: u8,
+    block: BlockId,
+    block_number: i64,
+    log_index: i64,
+) -> Result<crate::db::models::NewEmodeCategory> {
+    let pool = IPool::new(pool_addr, provider);
+    let config = pool
+        .getEModeCategoryCollateralConfig(category_id)
+        .block(block)
+        .call()
+        .await
+        .wrap_err_with(|| format!("Failed to fetch collateral config for eMode category {}", category_id))?;
+    let label = pool
+        .getEModeCategoryLabel(category_id)
+        .block(block)
+        .call()
+        .await
+        .wrap_err_with(|| format!("Failed to fetch label for eMode category {}", category_id))?;
+    let collateral_bitmap = bitmap_to_bigdecimal(
+        pool.getEModeCategoryCollateralBitmap(category_id)
+            .block(block)
+            .call()
+            .await
+            .wrap_err_with(|| format!("Failed to fetch collateral bitmap for eMode category {}", category_id))?,
+    )?;
+    let borrowable_bitmap = bitmap_to_bigdecimal(
+        pool.getEModeCategoryBorrowableBitmap(category_id)
+            .block(block)
+            .call()
+            .await
+            .wrap_err_with(|| format!("Failed to fetch borrowable bitmap for eMode category {}", category_id))?,
+    )?;
+    let ltvzero_bitmap = bitmap_to_bigdecimal(
+        pool.getEModeCategoryLtvzeroBitmap(category_id)
+            .block(block)
+            .call()
+            .await
+            .wrap_err_with(|| format!("Failed to fetch ltvzero bitmap for eMode category {}", category_id))?,
+    )?;
+    Ok(crate::db::models::NewEmodeCategory {
+        category_id: category_id as i32,
+        ltv: config.ltv as i64,
+        liquidation_threshold: config.liquidationThreshold as i64,
+        liquidation_bonus: config.liquidationBonus as i64,
+        collateral_bitmap,
+        borrowable_bitmap,
+        ltvzero_bitmap,
+        label,
+        last_updated_block: block_number,
+        last_updated_log_index: log_index,
+    })
 }
 
 #[allow(dead_code)]
@@ -222,7 +279,9 @@ pub async fn reserve_event_handler(pool: &DbPool, rpc_url: String) -> Result<()>
             BorrowCapChanged::SIGNATURE_HASH,
             SupplyCapChanged::SIGNATURE_HASH,
             ReserveFlashLoaning::SIGNATURE_HASH,
-            EModeAssetCategoryChanged::SIGNATURE_HASH,
+            AssetCollateralInEModeChanged::SIGNATURE_HASH,
+            AssetBorrowableInEModeChanged::SIGNATURE_HASH,
+            AssetLtvzeroInEModeChanged::SIGNATURE_HASH,
             DebtCeilingChanged::SIGNATURE_HASH,
             LiquidationProtocolFeeChanged::SIGNATURE_HASH,
             SiloedBorrowingChanged::SIGNATURE_HASH,
@@ -257,6 +316,133 @@ pub async fn process_reserve_event(
     let block_number = log.block_number.unwrap_or(0) as i64;
     let log_index = log.log_index.unwrap_or(0) as i64;
     let tx_hash = log.transaction_hash.unwrap().to_string();
+
+    if log.topics().first() == Some(&EModeCategoryAdded::SIGNATURE_HASH) {
+        if let Ok(decoded) = log.log_decode::<EModeCategoryAdded>() {
+            let e = decoded.data();
+            let pool = IPool::new(pool_addr, provider.clone());
+            let block = BlockId::number(block_number as u64);
+            let collateral_bitmap = bitmap_to_bigdecimal(
+                pool.getEModeCategoryCollateralBitmap(e.categoryId)
+                    .block(block)
+                    .call()
+                    .await
+                    .wrap_err_with(|| format!("Failed to fetch collateral bitmap for eMode category {}", e.categoryId))?
+            )?;
+            let borrowable_bitmap = bitmap_to_bigdecimal(
+                pool.getEModeCategoryBorrowableBitmap(e.categoryId)
+                    .block(block)
+                    .call()
+                    .await
+                    .wrap_err_with(|| format!("Failed to fetch borrowable bitmap for eMode category {}", e.categoryId))?
+            )?;
+            let ltvzero_bitmap = bitmap_to_bigdecimal(
+                pool.getEModeCategoryLtvzeroBitmap(e.categoryId)
+                    .block(block)
+                    .call()
+                    .await
+                    .wrap_err_with(|| format!("Failed to fetch ltvzero bitmap for eMode category {}", e.categoryId))?
+            )?;
+            let category = NewEmodeCategory {
+                category_id: e.categoryId as i32,
+                ltv: e.ltv.to::<u64>() as i64,
+                liquidation_threshold: e.liquidationThreshold.to::<u64>() as i64,
+                liquidation_bonus: e.liquidationBonus.to::<u64>() as i64,
+                collateral_bitmap,
+                borrowable_bitmap,
+                ltvzero_bitmap,
+                label: e.label.clone(),
+                last_updated_block: block_number,
+                last_updated_log_index: log_index,
+            };
+            emode_categories_repository::upsert(conn, category)
+                .await
+                .wrap_err_with(|| format!("Failed to upsert eMode category {}", e.categoryId))?;
+            info!("eMode category {} upserted (block {})", e.categoryId, block_number);
+        }
+        return Ok(());
+    }
+
+    if log.topics().first() == Some(&AssetCollateralInEModeChanged::SIGNATURE_HASH) {
+        if let Ok(decoded) = log.log_decode::<AssetCollateralInEModeChanged>() {
+            let e = decoded.data();
+            let cat_id = e.categoryId as i32;
+            let block = BlockId::number(block_number as u64);
+            let pool = IPool::new(pool_addr, provider.clone());
+            if emode_categories_repository::get(conn, cat_id).await?.is_none() {
+                warn!(category = cat_id, block = block_number, "eMode category not found — fetching from RPC");
+                let category = fetch_emode_category(provider.clone(), pool_addr, e.categoryId, block, block_number, log_index).await?;
+                emode_categories_repository::upsert(conn, category).await?;
+            } else {
+                let bitmap = bitmap_to_bigdecimal(
+                    pool.getEModeCategoryCollateralBitmap(e.categoryId)
+                        .block(block)
+                        .call()
+                        .await
+                        .wrap_err_with(|| format!("Failed to fetch collateral bitmap for eMode category {}", cat_id))?,
+                )?;
+                emode_categories_repository::update_collateral_bitmap(conn, cat_id, bitmap)
+                    .await
+                    .wrap_err_with(|| format!("Failed to update collateral bitmap for category {}", cat_id))?;
+            }
+            info!("eMode collateral bitmap updated: category={} asset={}", cat_id, e.asset);
+        }
+        return Ok(());
+    }
+
+    if log.topics().first() == Some(&AssetBorrowableInEModeChanged::SIGNATURE_HASH) {
+        if let Ok(decoded) = log.log_decode::<AssetBorrowableInEModeChanged>() {
+            let e = decoded.data();
+            let cat_id = e.categoryId as i32;
+            let block = BlockId::number(block_number as u64);
+            let pool = IPool::new(pool_addr, provider.clone());
+            if emode_categories_repository::get(conn, cat_id).await?.is_none() {
+                warn!(category = cat_id, block = block_number, "eMode category not found — fetching from RPC");
+                let category = fetch_emode_category(provider.clone(), pool_addr, e.categoryId, block, block_number, log_index).await?;
+                emode_categories_repository::upsert(conn, category).await?;
+            } else {
+                let bitmap = bitmap_to_bigdecimal(
+                    pool.getEModeCategoryBorrowableBitmap(e.categoryId)
+                        .block(block)
+                        .call()
+                        .await
+                        .wrap_err_with(|| format!("Failed to fetch borrowable bitmap for eMode category {}", cat_id))?,
+                )?;
+                emode_categories_repository::update_borrowable_bitmap(conn, cat_id, bitmap)
+                    .await
+                    .wrap_err_with(|| format!("Failed to update borrowable bitmap for category {}", cat_id))?;
+            }
+            info!("eMode borrowable bitmap updated: category={} asset={}", cat_id, e.asset);
+        }
+        return Ok(());
+    }
+
+    if log.topics().first() == Some(&AssetLtvzeroInEModeChanged::SIGNATURE_HASH) {
+        if let Ok(decoded) = log.log_decode::<AssetLtvzeroInEModeChanged>() {
+            let e = decoded.data();
+            let cat_id = e.categoryId as i32;
+            let block = BlockId::number(block_number as u64);
+            let pool = IPool::new(pool_addr, provider.clone());
+            if emode_categories_repository::get(conn, cat_id).await?.is_none() {
+                warn!(category = cat_id, block = block_number, "eMode category not found — fetching from RPC");
+                let category = fetch_emode_category(provider.clone(), pool_addr, e.categoryId, block, block_number, log_index).await?;
+                emode_categories_repository::upsert(conn, category).await?;
+            } else {
+                let bitmap = bitmap_to_bigdecimal(
+                    pool.getEModeCategoryLtvzeroBitmap(e.categoryId)
+                        .block(block)
+                        .call()
+                        .await
+                        .wrap_err_with(|| format!("Failed to fetch ltvzero bitmap for eMode category {}", cat_id))?,
+                )?;
+                emode_categories_repository::update_ltvzero_bitmap(conn, cat_id, bitmap)
+                    .await
+                    .wrap_err_with(|| format!("Failed to update ltvzero bitmap for category {}", cat_id))?;
+            }
+            info!("eMode ltvzero bitmap updated: category={} asset={}", cat_id, e.asset);
+        }
+        return Ok(());
+    }
 
     let log_data = match decode_log_type(&log) {
         Some(data) => data,
@@ -541,23 +727,6 @@ pub async fn process_reserve_event(
             .await
             .wrap_err_with(|| format!("Failed to update flash loan status for {}", asset))?;
             info!("Flash loan status changed for {}: {}", asset, e.enabled);
-        }
-
-        ProcessedLog::EModeAssetCategoryChanged(e) => {
-            let asset = e.asset.to_string();
-            reserves_repository::update_emode_category(
-                conn,
-                asset.clone(),
-                e.newCategoryId as i32,
-                block_number,
-                log_index,
-            )
-            .await
-            .wrap_err_with(|| format!("Failed to update eMode category for {}", asset))?;
-            info!(
-                "eMode category changed for {}: {} -> {}",
-                asset, e.oldCategoryId, e.newCategoryId
-            );
         }
 
         ProcessedLog::DebtCeilingChanged(e) => {

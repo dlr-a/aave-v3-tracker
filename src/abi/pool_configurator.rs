@@ -87,10 +87,31 @@ sol! {
         bool enabled
     );
 
-    event EModeAssetCategoryChanged(
+    event AssetCollateralInEModeChanged(
         address indexed asset,
-        uint8 oldCategoryId,
-        uint8 newCategoryId
+        uint8 categoryId,
+        bool collateral
+    );
+
+    event AssetBorrowableInEModeChanged(
+        address indexed asset,
+        uint8 categoryId,
+        bool borrowable
+    );
+
+    event AssetLtvzeroInEModeChanged(
+        address indexed asset,
+        uint8 categoryId,
+        bool ltvzero
+    );
+
+    event EModeCategoryAdded(
+        uint8 indexed categoryId,
+        uint256 ltv,
+        uint256 liquidationThreshold,
+        uint256 liquidationBonus,
+        address oracle,
+        string label
     );
 
     event SiloedBorrowingChanged(

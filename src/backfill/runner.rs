@@ -1,19 +1,22 @@
 use crate::abi::{
-    BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
-    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
-    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
-    ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
-    UnbackedMintCapChanged,
+    AssetBorrowableInEModeChanged, AssetCollateralInEModeChanged, AssetLtvzeroInEModeChanged,
+    BalanceTransfer, BorrowCapChanged, Burn, CollateralConfigurationChanged, DebtCeilingChanged,
+    EModeCategoryAdded, LiquidationProtocolFeeChanged, Mint,
+    ReserveActive, ReserveBorrowing, ReserveDataUpdated, ReserveDropped, ReserveFactorChanged,
+    ReserveFlashLoaning, ReserveFrozen, ReserveInitialized, ReserveInterestRateStrategyChanged,
+    ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen, ReserveUsedAsCollateralDisabled,
+    ReserveUsedAsCollateralEnabled, SiloedBorrowingChanged, SupplyCapChanged,
+    UnbackedMintCapChanged, UserEModeSet,
 };
 use crate::backfill::dispatcher::handle_log_logic;
 use crate::db::connection::DbPool;
+use crate::db::repositories::reserves_repository::{self};
 use crate::db::repositories::sync_status_repository;
+use crate::provider::{MultiProvider, is_provider_error};
 use alloy::primitives::Address;
 use alloy::{providers::Provider, rpc::types::eth::Filter};
 use alloy_primitives::address;
 use alloy_sol_types::SolEvent;
-use backoff::{ExponentialBackoff, future::retry};
 use diesel_async::AsyncConnection;
 use eyre::{Context, Result};
 use std::time::{Duration, Instant};
@@ -41,18 +44,31 @@ impl Default for BackfillConfig {
 
 pub async fn backfill(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
 ) -> Result<()> {
     let config = BackfillConfig::default();
-    let addresses: Vec<Address> = vec![
+
+    let mut addresses: Vec<Address> = vec![
         address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2"),
         address!("0x64b761D848206f447Fe2dd461b0c635Ec39EbB27"),
     ];
 
+    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
+    let token_addresses = reserves_repository::get_all_token_addresses(&mut conn)
+        .await
+        .wrap_err("Failed to fetch token addresses")?;
+    addresses.extend(token_addresses);
+
+    drop(conn);
+
+    if from_block > to_block {
+        tracing::info!("Backfill already complete");
+        return Ok(());
+    }
+
     let events = vec![
-        // Transfer::SIGNATURE_HASH,
         ReserveInitialized::SIGNATURE_HASH,
         ReserveDataUpdated::SIGNATURE_HASH,
         ReserveStableRateBorrowing::SIGNATURE_HASH,
@@ -68,29 +84,23 @@ pub async fn backfill(
         BorrowCapChanged::SIGNATURE_HASH,
         SupplyCapChanged::SIGNATURE_HASH,
         ReserveFlashLoaning::SIGNATURE_HASH,
-        EModeAssetCategoryChanged::SIGNATURE_HASH,
+        AssetCollateralInEModeChanged::SIGNATURE_HASH,
+        AssetBorrowableInEModeChanged::SIGNATURE_HASH,
+        AssetLtvzeroInEModeChanged::SIGNATURE_HASH,
         DebtCeilingChanged::SIGNATURE_HASH,
         LiquidationProtocolFeeChanged::SIGNATURE_HASH,
         SiloedBorrowingChanged::SIGNATURE_HASH,
         UnbackedMintCapChanged::SIGNATURE_HASH,
+        ReserveUsedAsCollateralEnabled::SIGNATURE_HASH,
+        ReserveUsedAsCollateralDisabled::SIGNATURE_HASH,
+        Mint::SIGNATURE_HASH,
+        Burn::SIGNATURE_HASH,
+        BalanceTransfer::SIGNATURE_HASH,
+        UserEModeSet::SIGNATURE_HASH,
+        EModeCategoryAdded::SIGNATURE_HASH,
     ];
 
-    let mut conn = pool.get().await.wrap_err("Failed to get DB connection")?;
-    let start_block = match sync_status_repository::get_last_block(&mut conn).await {
-        Ok(last) if last >= from_block => {
-            tracing::info!(checkpoint = last, "Resuming from checkpoint");
-            last + 1
-        }
-        _ => from_block,
-    };
-    drop(conn);
-
-    if start_block > to_block {
-        tracing::info!("Backfill already complete");
-        return Ok(());
-    }
-
-    let mut current = start_block;
+    let mut current = from_block;
     let mut chunk_size = config.initial_chunk_size;
 
     while current <= to_block {
@@ -121,13 +131,13 @@ pub async fn backfill(
         }
     }
 
-    tracing::info!("Backfill completed: blocks {} → {}", from_block, to_block);
+    tracing::info!("Backfill completed: blocks {} -> {}", from_block, to_block);
     Ok(())
 }
 
 async fn process_chunk_with_retry(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
     addresses: &[Address],
@@ -135,52 +145,57 @@ async fn process_chunk_with_retry(
     config: &BackfillConfig,
 ) -> Result<usize> {
     let start_time = Instant::now();
+    let mut interval = Duration::from_millis(100);
+    let max_interval = Duration::from_secs(10);
 
-    let backoff = ExponentialBackoff {
-        max_elapsed_time: Some(config.backoff_max_elapsed),
-        initial_interval: Duration::from_millis(100),
-        max_interval: Duration::from_secs(10),
-        multiplier: 2.0,
-        randomization_factor: 0.3,
-        ..Default::default()
-    };
+    loop {
+        match process_chunk_once(
+            pool,
+            provider.clone(),
+            from_block,
+            to_block,
+            addresses,
+            events,
+        )
+        .await
+        {
+            Ok(log_count) => {
+                tracing::info!(
+                    from = from_block,
+                    to = to_block,
+                    logs = log_count,
+                    duration_ms = start_time.elapsed().as_millis(),
+                    "Chunk committed"
+                );
+                return Ok(log_count);
+            }
+            Err(e) => {
+                if start_time.elapsed() > config.backoff_max_elapsed {
+                    return Err(e);
+                }
 
-    let log_count = retry(backoff, || {
-        let pool = pool.clone();
-        let provider = provider.clone();
-        let addresses = addresses.to_vec();
-        let events = events.to_vec();
+                if is_provider_error(&e) {
+                    provider.rotate();
+                    tracing::warn!(error = ?e, "Provider error, rotated");
+                    interval = Duration::from_millis(100);
+                    continue;
+                } else if is_retryable_error(&e) {
+                    tracing::warn!(error = ?e, "Transient error, will retry");
+                    interval = (interval * 2).min(max_interval);
+                } else {
+                    tracing::error!(error = ?e, "Permanent error");
+                    return Err(e);
+                }
 
-        async move {
-            process_chunk_once(&pool, provider, from_block, to_block, &addresses, &events)
-                .await
-                .map_err(|e| {
-                    if is_retryable_error(&e) {
-                        tracing::warn!(error = ?e, "Transient error, will retry");
-                        backoff::Error::transient(e)
-                    } else {
-                        tracing::error!(error = ?e, "Permanent error");
-                        backoff::Error::permanent(e)
-                    }
-                })
+                tokio::time::sleep(interval).await;
+            }
         }
-    })
-    .await?;
-
-    tracing::info!(
-        from = from_block,
-        to = to_block,
-        logs = log_count,
-        duration_ms = start_time.elapsed().as_millis(),
-        "Chunk committed"
-    );
-
-    Ok(log_count)
+    }
 }
 
 async fn process_chunk_once(
     pool: &DbPool,
-    provider: impl Provider + Clone + 'static,
+    provider: MultiProvider,
     from_block: i64,
     to_block: i64,
     addresses: &[Address],
@@ -207,7 +222,7 @@ async fn process_chunk_once(
 
         Box::pin(async move {
             if log_count == 0 {
-                sync_status_repository::update_last_block(conn, to_block).await?;
+                sync_status_repository::update_last_block(conn, to_block).await.map_err(|e| eyre::eyre!(e))?;
                 return Ok(0);
             }
 
@@ -226,7 +241,7 @@ async fn process_chunk_once(
                     })?;
             }
 
-            sync_status_repository::update_last_block(conn, to_block).await?;
+            sync_status_repository::update_last_block(conn, to_block).await.map_err(|e| eyre::eyre!(e))?;
 
             Ok(log_count)
         })
@@ -250,6 +265,7 @@ pub fn is_retryable_error(error: &eyre::Report) -> bool {
         "unavailable",
         "try again",
         "backend",
+        "block range",
     ];
 
     retryable_patterns

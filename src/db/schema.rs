@@ -1,6 +1,31 @@
 // @generated automatically by Diesel CLI.
 
 diesel::table! {
+    bootstrap_state (id) {
+        id -> Int4,
+        last_cursor -> Text,
+        meta_block -> Int8,
+        completed -> Bool,
+    }
+}
+
+diesel::table! {
+    emode_categories (category_id) {
+        category_id -> Int4,
+        ltv -> Int8,
+        liquidation_threshold -> Int8,
+        liquidation_bonus -> Int8,
+        collateral_bitmap -> Numeric,
+        borrowable_bitmap -> Numeric,
+        ltvzero_bitmap -> Numeric,
+        #[max_length = 64]
+        label -> Varchar,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+    }
+}
+
+diesel::table! {
     processed_events (tx_hash, log_index) {
         #[max_length = 66]
         tx_hash -> Bpchar,
@@ -52,7 +77,6 @@ diesel::table! {
         is_collateral_enabled -> Bool,
         is_stable_borrow_enabled -> Bool,
         is_flash_loan_enabled -> Bool,
-        emode_category_id -> Int4,
         debt_ceiling -> Numeric,
         liquidation_protocol_fee -> Int8,
         is_siloed_borrowing -> Bool,
@@ -77,11 +101,44 @@ diesel::table! {
     }
 }
 
+diesel::table! {
+    user_emode (user_address) {
+        #[max_length = 42]
+        user_address -> Bpchar,
+        emode_category_id -> Int4,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+    }
+}
+
+diesel::table! {
+    user_positions (user_address, asset_address) {
+        #[max_length = 42]
+        user_address -> Bpchar,
+        #[max_length = 42]
+        asset_address -> Bpchar,
+        scaled_atoken_balance -> Numeric,
+        scaled_variable_debt -> Numeric,
+        use_as_collateral -> Bool,
+        atoken_last_index -> Numeric,
+        debt_last_index -> Numeric,
+        last_updated_block -> Int8,
+        last_updated_log_index -> Int8,
+        is_active -> Bool,
+        created_at_block -> Int8,
+    }
+}
+
 diesel::joinable!(reserve_state -> reserves (asset_address));
+diesel::joinable!(user_positions -> reserves (asset_address));
 
 diesel::allow_tables_to_appear_in_same_query!(
+    bootstrap_state,
+    emode_categories,
     processed_events,
     reserve_state,
     reserves,
     sync_status,
+    user_emode,
+    user_positions,
 );

@@ -1,7 +1,7 @@
-use crate::abi::{IERC20, IPool, IProtocolDataProvider};
+use crate::abi::{IERC20, IPool, IProtocolDataProvider, IUiPoolDataProviderV3};
 use crate::db::connection::DbPool;
-use crate::db::models::{NewReserve, NewReserveState};
-use crate::db::repositories::{reserve_state_repository, reserves_repository};
+use crate::db::models::{NewEmodeCategory, NewReserve, NewReserveState};
+use crate::db::repositories::{emode_categories_repository, reserve_state_repository, reserves_repository};
 use alloy::primitives::{Address, U256, Uint, address};
 use alloy::providers::{Provider, ProviderBuilder};
 use bigdecimal::BigDecimal;
@@ -28,6 +28,8 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
 
     let data_provider_addr = address!("0x0a16f2FCC0D44FaE41cc54e079281D84A363bECD");
     let pool_addr = address!("0x87870Bca3F3fD6335C3F4ce8392D69350B4fA4E2");
+    let ui_pool_data_provider_addr = address!("0x56b7A1012765C285afAC8b8F25C69Bf10ccfE978");
+    let addresses_provider_addr = address!("0x2f39d218133AFaB8F2B819B1066c7E434Ad94E9e");
 
     let protocol_data_provider = IProtocolDataProvider::new(data_provider_addr, provider.clone());
 
@@ -55,6 +57,50 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
             }
         }
     }
+
+    fetch_emode_categories(pool, &provider, ui_pool_data_provider_addr, addresses_provider_addr).await?;
+
+    Ok(())
+}
+
+async fn fetch_emode_categories<P>(
+    pool: &DbPool,
+    provider: &P,
+    ui_pool_data_provider_addr: Address,
+    addresses_provider_addr: Address,
+) -> Result<()>
+where
+    P: Provider + Clone + 'static,
+{
+    let ui_data_provider = IUiPoolDataProviderV3::new(ui_pool_data_provider_addr, provider.clone());
+
+    let emodes = ui_data_provider
+        .getEModes(addresses_provider_addr)
+        .call()
+        .await?;
+
+    let count = emodes.len();
+    let mut conn = pool.get().await?;
+    for emode in emodes {
+        emode_categories_repository::upsert(
+            &mut conn,
+            NewEmodeCategory {
+                category_id: emode.id as i32,
+                ltv: emode.eMode.ltv as i64,
+                liquidation_threshold: emode.eMode.liquidationThreshold as i64,
+                liquidation_bonus: emode.eMode.liquidationBonus as i64,
+                collateral_bitmap: to_bigdecimal(U256::from(emode.eMode.collateralBitmap))?,
+                borrowable_bitmap: to_bigdecimal(U256::from(emode.eMode.borrowableBitmap))?,
+                ltvzero_bitmap: to_bigdecimal(U256::from(emode.eMode.ltvzeroBitmap))?,
+                label: emode.eMode.label,
+                last_updated_block: 0,
+                last_updated_log_index: -1,
+            },
+        )
+        .await?;
+    }
+
+    info!("Synced {} eMode categories", count);
     Ok(())
 }
 
@@ -91,7 +137,6 @@ where
         .add(data_provider.getLiquidationProtocolFee(asset_address))
         .add(data_provider.getSiloedBorrowing(asset_address))
         .add(data_provider.getUnbackedMintCap(asset_address))
-        .add(data_provider.getReserveEModeCategory(asset_address))
         .aggregate()
         .await;
 
@@ -101,10 +146,9 @@ where
         liquidation_protocol_fee,
         siloed_borrowing,
         unbacked_mint_cap,
-        emode_category,
     ) = match optional_result {
         Ok(result) => result,
-        Err(_) => (true, U256::ZERO, U256::ZERO, false, U256::ZERO, U256::ZERO),
+        Err(_) => (true, U256::ZERO, U256::ZERO, false, U256::ZERO),
     };
 
     let atoken = IERC20::new(token_addresses.aTokenAddress, provider.clone());
@@ -149,7 +193,6 @@ where
         is_collateral_enabled: reserve_config.usageAsCollateralEnabled,
         is_stable_borrow_enabled: reserve_config.stableBorrowRateEnabled,
         is_flash_loan_enabled: flash_loan_enabled,
-        emode_category_id: emode_category.to::<u32>() as i32,
         debt_ceiling: to_bigdecimal(debt_ceiling)?,
         liquidation_protocol_fee: liquidation_protocol_fee.to::<u64>() as i64,
         is_siloed_borrowing: siloed_borrowing,

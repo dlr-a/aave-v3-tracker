@@ -1,10 +1,10 @@
 use aave_v3_tracker::abi::{
+    AssetBorrowableInEModeChanged, AssetCollateralInEModeChanged, AssetLtvzeroInEModeChanged,
     BorrowCapChanged, CollateralConfigurationChanged, DebtCeilingChanged,
-    EModeAssetCategoryChanged, LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing,
-    ReserveDataUpdated, ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen,
-    ReserveInitialized, ReserveInterestRateStrategyChanged, ReservePaused,
-    ReserveStableRateBorrowing, ReserveUnfrozen, SiloedBorrowingChanged, SupplyCapChanged,
-    UnbackedMintCapChanged,
+    LiquidationProtocolFeeChanged, ReserveActive, ReserveBorrowing, ReserveDataUpdated,
+    ReserveDropped, ReserveFactorChanged, ReserveFlashLoaning, ReserveFrozen, ReserveInitialized,
+    ReserveInterestRateStrategyChanged, ReservePaused, ReserveStableRateBorrowing, ReserveUnfrozen,
+    SiloedBorrowingChanged, SupplyCapChanged, UnbackedMintCapChanged,
 };
 use aave_v3_tracker::sync_reserves::reserve_event_handler::{ProcessedLog, decode_log_type};
 use alloy::primitives::{Address, B256, LogData};
@@ -120,7 +120,9 @@ fn test_signature_hashes_are_distinct() {
         BorrowCapChanged::SIGNATURE_HASH,
         SupplyCapChanged::SIGNATURE_HASH,
         ReserveFlashLoaning::SIGNATURE_HASH,
-        EModeAssetCategoryChanged::SIGNATURE_HASH,
+        AssetCollateralInEModeChanged::SIGNATURE_HASH,
+        AssetBorrowableInEModeChanged::SIGNATURE_HASH,
+        AssetLtvzeroInEModeChanged::SIGNATURE_HASH,
         DebtCeilingChanged::SIGNATURE_HASH,
         LiquidationProtocolFeeChanged::SIGNATURE_HASH,
         SiloedBorrowingChanged::SIGNATURE_HASH,
