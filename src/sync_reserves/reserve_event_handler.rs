@@ -472,7 +472,7 @@ pub async fn process_reserve_event(
                 "Reserve not found in DB — fetching from RPC"
             );
 
-            process_reserve(pool, &provider, asset_addr, data_provider_addr, pool_addr)
+            process_reserve(pool, &provider, asset_addr, data_provider_addr, pool_addr, Some(block_number as u64))
                 .await
                 .wrap_err_with(|| {
                     format!(
@@ -518,6 +518,7 @@ pub async fn process_reserve_event(
                 asset_address,
                 data_provider_addr,
                 pool_addr,
+                Some(block_number as u64),
             )
             .await
             .wrap_err_with(|| {

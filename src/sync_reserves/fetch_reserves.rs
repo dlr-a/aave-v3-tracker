@@ -1,7 +1,10 @@
 use crate::abi::{IERC20, IPool, IProtocolDataProvider, IUiPoolDataProviderV3};
 use crate::db::connection::DbPool;
 use crate::db::models::{NewEmodeCategory, NewReserve, NewReserveState};
-use crate::db::repositories::{emode_categories_repository, reserve_state_repository, reserves_repository};
+use crate::db::repositories::{
+    emode_categories_repository, reserve_state_repository, reserves_repository,
+};
+use alloy::eips::BlockId;
 use alloy::primitives::{Address, U256, Uint, address};
 use alloy::providers::{Provider, ProviderBuilder};
 use bigdecimal::BigDecimal;
@@ -42,6 +45,7 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
             token.tokenAddress,
             data_provider_addr,
             pool_addr,
+            None,
         )
         .await
         {
@@ -58,7 +62,13 @@ pub async fn fetch_reserves(pool: &DbPool, rpc_url: String) -> Result<()> {
         }
     }
 
-    fetch_emode_categories(pool, &provider, ui_pool_data_provider_addr, addresses_provider_addr).await?;
+    fetch_emode_categories(
+        pool,
+        &provider,
+        ui_pool_data_provider_addr,
+        addresses_provider_addr,
+    )
+    .await?;
 
     Ok(())
 }
@@ -110,6 +120,7 @@ pub async fn process_reserve<P>(
     asset_address: Address,
     dp_addr: Address,
     pool_addr: Address,
+    at_block: Option<u64>,
 ) -> Result<()>
 where
     P: Provider + Clone + 'static,
@@ -118,27 +129,39 @@ where
     let pool_contract = IPool::new(pool_addr, provider.clone());
     let erc20 = IERC20::new(asset_address, provider.clone());
 
-    let (token_addresses, reserve_config, pool_data, caps, current_block) = provider
+    let block_id = at_block.map(BlockId::number);
+
+    let base_mc = provider
         .multicall()
         .add(data_provider.getReserveTokensAddresses(asset_address))
         .add(data_provider.getReserveConfigurationData(asset_address))
         .add(pool_contract.getReserveData(asset_address))
-        .add(data_provider.getReserveCaps(asset_address))
-        .get_block_number()
-        .aggregate()
-        .await?;
+        .add(data_provider.getReserveCaps(asset_address));
+
+    let (token_addresses, reserve_config, pool_data, caps) = match block_id {
+        Some(bid) => base_mc.block(bid).aggregate().await?,
+        None => base_mc.aggregate().await?,
+    };
+
+    let current_block: i64 = match at_block {
+        Some(b) => b as i64,
+        None => provider.get_block_number().await? as i64,
+    };
 
     let symbol = erc20.symbol().call().await.unwrap_or("UNKNOWN".to_string());
 
-    let optional_result = provider
+    let optional_mc = provider
         .multicall()
         .add(data_provider.getFlashLoanEnabled(asset_address))
         .add(data_provider.getDebtCeiling(asset_address))
         .add(data_provider.getLiquidationProtocolFee(asset_address))
         .add(data_provider.getSiloedBorrowing(asset_address))
-        .add(data_provider.getUnbackedMintCap(asset_address))
-        .aggregate()
-        .await;
+        .add(data_provider.getUnbackedMintCap(asset_address));
+
+    let optional_result = match block_id {
+        Some(bid) => optional_mc.block(bid).aggregate().await,
+        None => optional_mc.aggregate().await,
+    };
 
     let (
         flash_loan_enabled,
@@ -154,16 +177,23 @@ where
     let atoken = IERC20::new(token_addresses.aTokenAddress, provider.clone());
     let vtoken = IERC20::new(token_addresses.variableDebtTokenAddress, provider.clone());
 
-    let (total_liquidity_raw, total_variable_raw) = provider
+    let supply_mc = provider
         .multicall()
         .add(atoken.totalSupply())
-        .add(vtoken.totalSupply())
-        .aggregate()
-        .await?;
+        .add(vtoken.totalSupply());
+
+    let (total_liquidity_raw, total_variable_raw) = match block_id {
+        Some(bid) => supply_mc.block(bid).aggregate().await?,
+        None => supply_mc.aggregate().await?,
+    };
 
     let total_stable_raw = if token_addresses.stableDebtTokenAddress != Address::ZERO {
         let stoken = IERC20::new(token_addresses.stableDebtTokenAddress, provider.clone());
-        stoken.totalSupply().call().await.unwrap_or(U256::ZERO)
+        let call = stoken.totalSupply();
+        match block_id {
+            Some(bid) => call.block(bid).call().await.unwrap_or(U256::ZERO),
+            None => call.call().await.unwrap_or(U256::ZERO),
+        }
     } else {
         U256::ZERO
     };
@@ -201,8 +231,7 @@ where
         v_debt_token_address: token_addresses.variableDebtTokenAddress.to_string(),
         s_debt_token_address: token_addresses.stableDebtTokenAddress.to_string(),
         interest_rate_strategy_address: pool_data.interestRateStrategyAddress.to_string(),
-        last_updated_block: i64::try_from(current_block)
-            .map_err(|_| eyre!("block number overflow: {}", current_block))?,
+        last_updated_block: current_block,
         last_updated_log_index: -1,
     };
 
@@ -221,8 +250,7 @@ where
         accrued_to_treasury: to_bigdecimal(U256::from(pool_data.accruedToTreasury))?,
         unbacked: to_bigdecimal(U256::from(pool_data.unbacked))?,
         isolation_mode_total_debt: to_bigdecimal(U256::from(pool_data.isolationModeTotalDebt))?,
-        last_updated_block: i64::try_from(current_block)
-            .map_err(|_| eyre!("block number overflow: {}", current_block))?,
+        last_updated_block: current_block,
         last_updated_log_index: -1,
     };
 
